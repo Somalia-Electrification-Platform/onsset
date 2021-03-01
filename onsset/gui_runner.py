@@ -13,10 +13,11 @@ root = tk.Tk()
 root.withdraw()
 root.attributes("-topmost", True)
 
-choice = int(input('Enter 1 to prepare/calibrate the GIS input file, 2 to run scenario(s): '))
+choice = 2  # int(input('Enter 1 to prepare/calibrate the GIS input file, 2 to run scenario(s): '))
 
 messagebox.showinfo('OnSSET', 'Open the specs file')
 specs_path = filedialog.askopenfilename()
+print(specs_path)
 
 specs = pd.read_excel(specs_path, index_col=0)
 
@@ -37,9 +38,13 @@ if choice == 1:
 elif choice == 2:
     messagebox.showinfo('OnSSET', 'Open the csv file with calibrated GIS data')
     calibrated_csv_path = filedialog.askopenfilename()
-    messagebox.showinfo('OnSSET', 'Browse to RESULTS folder to save outputs')
-    results_folder = filedialog.askdirectory()
-    messagebox.showinfo('OnSSET', 'Browse to SUMMARIES folder and name the scenario to save outputs')
-    summary_folder = filedialog.askdirectory()
+    print(calibrated_csv_path)
+    #  messagebox.showinfo('OnSSET', 'Browse to RESULTS folder to save outputs')
+    # results_folder = filedialog.askdirectory()
+    results_folder = r'C:\Users\adm.esa\Desktop\Somalia_running_folder\Final_phase\Sunday_Results'
+
+    # messagebox.showinfo('OnSSET', 'Browse to SUMMARIES folder and name the scenario to save outputs')
+    # summary_folder = filedialog.askdirectory()
+    summary_folder = r'C:\Users\adm.esa\Desktop\Somalia_running_folder\Final_phase\Sunday_Summaries'
 
     scenario(specs_path, calibrated_csv_path, results_folder, summary_folder)
