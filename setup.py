@@ -33,6 +33,9 @@ setuptools.setup(
         'seaborn',
         'scipy',
         'matplotlib',
+        'tk',
+        'folium',
+        'branca'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

@@ -3,13 +3,13 @@ from math import exp, log, pi
 from typing import Dict
 import scipy.spatial
 import os
-from hybrids_pv import read_environmental_data, pv_diesel_hybrid
-from hybrids_wind import read_wind_environmental_data, wind_diesel_hybrid
+from onsset.hybrids_pv import read_environmental_data, pv_diesel_hybrid
+from onsset.hybrids_wind import read_wind_environmental_data, wind_diesel_hybrid
 
 import numpy as np
 import pandas as pd
 
-logging.basicConfig(format='%(asctime)s\t\t%(message)s', level=logging.DEBUG)
+# logging.basicConfig(format='%(asctime)s\t\t%(message)s', level=logging.DEBUG)
 # logger = logging.getLogger(__name__)
 
 # Columns in settlements file must match these exactly
@@ -285,7 +285,7 @@ class Technology:
         cost_dict_list = sorted(cost_dict_list)
         for key in cost_dict_list:
             if self.standalone:
-                cap_cost.loc[((installed_capacity / (people / num_people_per_hh)) < key) & (cap_cost == 0)] = \
+                cap_cost.loc[((installed_capacity / (new_connections / num_people_per_hh)) < key) & (cap_cost == 0)] = \
                     self.capital_cost[key]
             else:
                 cap_cost.loc[(installed_capacity < key) & (cap_cost == 0)] = self.capital_cost[key]
