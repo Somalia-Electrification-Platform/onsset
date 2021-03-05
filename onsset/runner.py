@@ -78,8 +78,8 @@ def calibration(specs_path, csv_path, specs_path_calib, calibrated_csv_path):
 
     pop_modelled, urban_modelled = onsseter.calibrate_current_pop_and_urban(pop_actual, urban_current)
 
-    onsseter.project_pop_and_urban(pop_modelled, pop_future_high, pop_future_low, urban_modelled,
-                                   urban_future, start_year, end_year, intermediate_year)
+    onsseter.project_pop_and_urban(pop_modelled, urban_pop_growth, rural_pop_growth,
+                                   start_year, end_year, intermediate_year)
 
     elec_modelled, rural_elec_ratio, urban_elec_ratio = \
         onsseter.elec_current_and_future(elec_actual, elec_actual_urban, elec_actual_rural, start_year)

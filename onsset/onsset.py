@@ -984,7 +984,7 @@ class SettlementProcessor:
         for num in tier_num:
             self.df[SET_WTFtier + "{}".format(num)] = wb_tiers_all[num]
 
-    def calibrate_current_pop_and_urban(self, pop_actual, urban_current):
+    def calibrate_current_pop_and_urban(self, pop_actual, major_urban_centers_pop, other_urban_areas_pop, other_urban_areas_road_dist):
         """
         The function calibrates population values and urban/rural split (as estimated from GIS layers) based
         on actual values provided by the user for the start year.
@@ -999,56 +999,24 @@ class SettlementProcessor:
         self.df[SET_POP_CALIB] = self.df.apply(lambda row: row[SET_POP] * pop_ratio, axis=1)
         pop_modelled = self.df[SET_POP_CALIB].sum()
         pop_diff = abs(pop_modelled - pop_actual)
-        if abs(pop_modelled - pop_actual) < 0.03:
-            print('La population a été calibrée avec succès')
-        else:
-            print('La population calibrée diffère par {:.2f}. '
-                  'Au cas où cela ne serait pas acceptable, veuillez réviser cette partie du code'.format(pop_diff))
 
-        # TODO Why do we apply the ratio to elec_pop? Shouldn't the calibration take place before defining elec_pop?
         self.df[SET_ELEC_POP_CALIB] = self.df[SET_ELEC_POP] * pop_ratio
 
-        # logging.info('Urban/rural calibration process')
-        # TODO As indicated below, HRSL classifies in 0, 1 and 2; I don't get why if statement uses 3 here.
-        if max(self.df[SET_URBAN]) == 3:  # THIS OPTION IS CURRENTLY DISABLED
-            calibrate = True if 'n' in input(
-                'Use urban definition from GIS layer <y/n> (n=model calibration):') else False
-        else:
-            calibrate = True
-        # RUN_PARAM: This is where manual calibration of urban/rural population takes place.
-        # The model uses 0, 1, 2 as GHS population layer does.
-        # As of this version, urban are only self.dfs with value equal to 2
-        if calibrate:
-            # urban_modelled = 2
-            # factor = 1
-            # while abs(urban_modelled - urban_current) > 0.01:
-            #     self.df[SET_URBAN] = 0
-            #     self.df.loc[(self.df[SET_POP_CALIB] > 5000 * factor) & (
-            #             self.df[SET_POP_CALIB] / self.df[SET_GRID_CELL_AREA] > 350 * factor), SET_URBAN] = 1
-            #     self.df.loc[(self.df[SET_POP_CALIB] > 50000 * factor) & (
-            #             self.df[SET_POP_CALIB] / self.df[SET_GRID_CELL_AREA] > 1500 * factor), SET_URBAN] = 2
-            #     pop_urb = self.df.loc[self.df[SET_URBAN] > 1, SET_POP_CALIB].sum()
-            #     urban_modelled = pop_urb / pop_actual
-            #     if urban_modelled > urban_current:
-            #         factor *= 1.1
-            #     else:
-            #         factor *= 0.9
-            self.df.loc[self.df[SET_POP_CALIB] > 10000, SET_URBAN] = 2
-            self.df.loc[(self.df[SET_POP_CALIB] > 1500) & (self.df[SET_ROAD_DIST] < 5), SET_URBAN] = 2
+        self.df[SET_URBAN] = 0
+        self.df.loc[self.df[SET_POP_CALIB] > major_urban_centers_pop, SET_URBAN] = 2
+        self.df.loc[(self.df[SET_POP_CALIB] > other_urban_areas_pop) & (self.df[SET_ROAD_DIST] < other_urban_areas_road_dist), SET_URBAN] = 2
 
         # Get the calculated urban ratio, and limit it to within reasonable boundaries
         pop_urb = self.df.loc[self.df[SET_URBAN] > 1, SET_POP_CALIB].sum()
         urban_modelled = pop_urb / pop_actual
 
-        if abs(urban_modelled - urban_current) > 0.05:
-            print('Le ratio urbain modélisé est {:.2f}. '
-                  'Au cas où cela ne serait pas acceptable, veuillez réviser cette partie du code'.format(
-                urban_modelled))
+        print('The estimated start year population is {:.2f} million'.format(self.df[SET_POP].sum()/1000000))
+        print('The modelled urban ratio is {:.2f}. '
+              'If this is not acceptable, please readjust the input values'.format(urban_modelled))
 
         return pop_modelled, urban_modelled
 
-    def project_pop_and_urban(self, pop_modelled, pop_future_high, pop_future_low, urban_modelled,
-                              urban_future, start_year, end_year, intermediate_year):
+    def project_pop_and_urban(self, pop_modelled, urban_pop_growth, rural_pop_growth,  start_year, end_year, intermediate_year):
         """
         This function projects population and urban/rural ratio for the different years of the analysis
         """
@@ -1057,50 +1025,45 @@ class SettlementProcessor:
         # Project future population, with separate growth rates for urban and rural
         # logging.info('Population projection process')
 
-        # TODO this is a residual of the previous process;
-        # shall we delete? Is there any scenario where we don't apply projections?
-        calibrate = True
-
-        if calibrate:
-            urban_growth_high = (urban_future * pop_future_high) / (urban_modelled * pop_modelled)
-            rural_growth_high = ((1 - urban_future) * pop_future_high) / ((1 - urban_modelled) * pop_modelled)
-
-            yearly_urban_growth_rate_high = urban_growth_high ** (1 / project_life)
-            yearly_rural_growth_rate_high = rural_growth_high ** (1 / project_life)
-
-            urban_growth_low = (urban_future * pop_future_low) / (urban_modelled * pop_modelled)
-            rural_growth_low = ((1 - urban_future) * pop_future_low) / ((1 - urban_modelled) * pop_modelled)
-
-            yearly_urban_growth_rate_low = urban_growth_low ** (1 / project_life)
-            yearly_rural_growth_rate_low = rural_growth_low ** (1 / project_life)
-        else:
-            urban_growth_high = pop_future_high / pop_modelled
-            rural_growth_high = pop_future_high / pop_modelled
-
-            yearly_urban_growth_rate_high = urban_growth_high ** (1 / project_life)
-            yearly_rural_growth_rate_high = rural_growth_high ** (1 / project_life)
-
-            urban_growth_low = pop_future_low / pop_modelled
-            rural_growth_low = pop_future_low / pop_modelled
-
-            yearly_urban_growth_rate_low = urban_growth_low ** (1 / project_life)
-            yearly_rural_growth_rate_low = rural_growth_low ** (1 / project_life)
+        yearly_urban_growth_rate = urban_pop_growth ** (1 / project_life)
+        yearly_rural_growth_rate = rural_pop_growth ** (1 / project_life)
 
         # RUN_PARAM: Define here the years for which results should be provided in the output file.
         years_of_analysis = [intermediate_year, end_year]
 
         for year in years_of_analysis:
-            self.df[SET_POP + "{}".format(year) + 'High'] = \
-                self.df.apply(lambda row: row[SET_POP_CALIB] * (yearly_urban_growth_rate_high ** (year - start_year))
+            self.df[SET_POP + "{}".format(year)] = \
+                self.df.apply(lambda row: row[SET_POP_CALIB] * (yearly_urban_growth_rate ** (year - start_year))
                 if row[SET_URBAN] > 1
-                else row[SET_POP_CALIB] * (yearly_rural_growth_rate_high ** (year - start_year)), axis=1)
-
-            self.df[SET_POP + "{}".format(year) + 'Low'] = \
-                self.df.apply(lambda row: row[SET_POP_CALIB] * (yearly_urban_growth_rate_low ** (year - start_year))
-                if row[SET_URBAN] > 1
-                else row[SET_POP_CALIB] * (yearly_rural_growth_rate_low ** (year - start_year)), axis=1)
+                else row[SET_POP_CALIB] * (yearly_rural_growth_rate ** (year - start_year)), axis=1)
 
         self.df[SET_POP + "{}".format(start_year)] = self.df.apply(lambda row: row[SET_POP_CALIB], axis=1)
+
+    def mini_grid_electrified(self, electrification_share):
+        self.df[SET_ELEC_POP_CALIB] = self.df[SET_POP_CALIB] * electrification_share
+        elec_pop = (self.df[SET_ELEC_POP_CALIB].sum()/self.df[SET_POP_CALIB].sum())
+        print('The modelled electrification ratio is {:.2f}'.format(elec_pop))
+
+    def grid_option(self, option):
+        if option == 1:
+            self.df[SET_MV_DIST_CURRENT] = 999
+            self.df[SET_MV_DIST_PLANNED] = 999
+            self.df[SET_HV_DIST_CURRENT] = 999
+            self.df[SET_HV_DIST_PLANNED] = 999
+        elif option == 2:
+            self.df[SET_HV_DIST_CURRENT] = 999
+            self.df[SET_HV_DIST_PLANNED] = 999
+        elif option == 3:
+            self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
+            self.df[SET_MV_DIST_PLANNED] = self.df[SET_SUBSTATION_DIST]
+            self.df[SET_HV_DIST_CURRENT] = self.df['HVLineDistSplit']
+            self.df[SET_HV_DIST_PLANNED] = self.df['HVLineDistSplit']
+        elif option == 3:
+            self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
+            self.df[SET_MV_DIST_PLANNED] = self.df[SET_SUBSTATION_DIST]
+            self.df[SET_HV_DIST_CURRENT] = self.df['HVLineDistSplit']
+            self.df[SET_HV_DIST_PLANNED] = self.df['HVLineDistNational']
+
 
     def elec_current_and_future(self, elec_actual, elec_actual_urban, elec_actual_rural, start_year,
                                 min_night_lights=0, min_pop=50, max_transformer_dist=2, max_mv_dist=2, max_hv_dist=5):
