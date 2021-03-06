@@ -773,10 +773,6 @@ class SettlementProcessor:
         self.df[SET_SLOPE] = pd.to_numeric(self.df[SET_SLOPE], errors='coerce')
         self.df[SET_LAND_COVER] = pd.to_numeric(self.df[SET_LAND_COVER], errors='coerce')
         self.df[SET_SUBSTATION_DIST] = pd.to_numeric(self.df[SET_SUBSTATION_DIST], errors='coerce')
-        self.df[SET_HV_DIST_CURRENT] = pd.to_numeric(self.df[SET_HV_DIST_CURRENT], errors='coerce')
-        self.df[SET_HV_DIST_PLANNED] = pd.to_numeric(self.df[SET_HV_DIST_PLANNED], errors='coerce')
-        self.df[SET_MV_DIST_CURRENT] = pd.to_numeric(self.df[SET_MV_DIST_CURRENT], errors='coerce')
-        self.df[SET_MV_DIST_PLANNED] = pd.to_numeric(self.df[SET_MV_DIST_PLANNED], errors='coerce')
         self.df[SET_ROAD_DIST] = pd.to_numeric(self.df[SET_ROAD_DIST], errors='coerce')
         self.df[SET_X_DEG] = pd.to_numeric(self.df[SET_X_DEG], errors='coerce')
         self.df[SET_Y_DEG] = pd.to_numeric(self.df[SET_Y_DEG], errors='coerce')
@@ -785,13 +781,11 @@ class SettlementProcessor:
         self.df[SET_HYDRO] = pd.to_numeric(self.df[SET_HYDRO], errors='coerce')
         self.df[SET_HYDRO_FID] = pd.to_numeric(self.df[SET_HYDRO_FID], errors='coerce')
         self.df[SET_URBAN] = pd.to_numeric(self.df[SET_URBAN], errors='coerce')
-        self.df[SET_CAPITA_DEMAND] = pd.to_numeric(self.df[SET_CAPITA_DEMAND], errors='coerce')
         self.df[SET_AGRI_DEMAND] = pd.to_numeric(self.df[SET_AGRI_DEMAND], errors='coerce')
         self.df[SET_HEALTH_DEMAND] = pd.to_numeric(self.df[SET_HEALTH_DEMAND], errors='coerce')
         self.df[SET_EDU_DEMAND] = pd.to_numeric(self.df[SET_EDU_DEMAND], errors='coerce')
         self.df[SET_COMMERCIAL_DEMAND] = pd.to_numeric(self.df[SET_COMMERCIAL_DEMAND], errors='coerce')
         self.df[SET_ELEC_ORDER] = pd.to_numeric(self.df[SET_ELEC_ORDER], errors='coerce')
-        self.df[SET_CONFLICT] = pd.to_numeric(self.df[SET_CONFLICT], errors='coerce')
         self.df[SET_POP] = self.df[SET_POP].round(0)
 
         self.df.loc[self.df[SET_ELEC_POP] > self.df[SET_POP], SET_ELEC_POP] = self.df[SET_POP]
@@ -1014,7 +1008,7 @@ class SettlementProcessor:
         urban_modelled = pop_urb / pop_actual
 
         print('The estimated start year population is {:.2f} million'.format(self.df[SET_POP_CALIB].sum()/1000000))
-        print('The modelled urban ratio is {:.2f}.'.format(urban_modelled))
+        print('The modelled urban ratio is {:.1f} %.'.format(urban_modelled*100))
 
         self.df.loc[self.df[SET_URBAN] == 0, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
         self.df.loc[self.df[SET_URBAN] == 1, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
@@ -1066,7 +1060,9 @@ class SettlementProcessor:
         elif option == 1:
             self.df[SET_HV_DIST_CURRENT] = 999
             self.df[SET_HV_DIST_PLANNED] = 999
-            self.df.loc[self.df[SET_MV_DIST_CURRENT] == 0, SET_ELEC_FINAL_CODE + "{}".format(start_year)] = 1
+            self.df[SET_MV_DIST_CURRENT] = self.df['ExistingMVLineDist']
+            self.df[SET_MV_DIST_PLANNED] = self.df['ExistingMVLineDist']
+            self.df.loc[self.df['ExistingMVLineDist'] == 0, SET_ELEC_FINAL_CODE + "{}".format(start_year)] = 1
             grid_cost = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, 'PVHybridGenLCOE' + "{}".format(year)].mean()
         elif option == 2:
             self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
@@ -1339,6 +1335,7 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_MV_CONNECT_DIST] = self.df[SET_HV_DIST_CURRENT]
         self.df[SET_MIN_TD_DIST] = self.df[[SET_MV_DIST_PLANNED, SET_HV_DIST_PLANNED]].min(axis=1)
 
+    def grid_cell_area(self):
         self.df[SET_GRID_CELL_AREA_TEMP] = self.df[SET_GRID_CELL_AREA] * 1
         self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] > 0), SET_GRID_CELL_AREA_TEMP] *= self.df['Cellssum']/self.df['Cellscount'] * self.df[SET_GRID_CELL_AREA]
         self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] == 0), SET_GRID_CELL_AREA_TEMP] *= 0.5
@@ -1852,7 +1849,7 @@ class SettlementProcessor:
 
     def calculate_pv_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_pv_hybrid_calc,
                                   pv_panel_investment, diesel_gen_investment, discount_rate, battery_cost,
-                                  inverter_cost, charge_controller_cost, pv_life, diesel_life, inverter_life, min_pop):
+                                  inverter_cost, pv_life, diesel_life, inverter_life, min_pop):
 
         path_7 = os.path.join('Supplementary_files', 'Somalia_PV.csv')
         # path_8 = os.path.join('Supplementary_files', 'ninja_pv_8.0000_2.3000_uncorrected.csv')
@@ -1925,7 +1922,7 @@ class SettlementProcessor:
             pv_hybrid_capacity_1[g][:], \
             pv_hybrid_ren_share_1[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 1, start_year, end_year,
                                                            discount_rate, battery_cost, pv_panel_investment,
-                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           diesel_gen_investment, inverter_cost,
                                                            pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range,
                                                            )
@@ -1935,7 +1932,7 @@ class SettlementProcessor:
             pv_hybrid_capacity_2[g][:], \
             pv_hybrid_ren_share_2[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 2, start_year, end_year,
                                                            discount_rate, battery_cost, pv_panel_investment,
-                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           diesel_gen_investment, inverter_cost,
                                                            pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range
                                                            )
@@ -1945,7 +1942,7 @@ class SettlementProcessor:
             pv_hybrid_capacity_3[g][:], \
             pv_hybrid_ren_share_3[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 3, start_year, end_year,
                                                            discount_rate, battery_cost, pv_panel_investment,
-                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           diesel_gen_investment, inverter_cost,
                                                            pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range
                                                            )
@@ -1955,7 +1952,7 @@ class SettlementProcessor:
             pv_hybrid_capacity_4[g][:], \
             pv_hybrid_ren_share_4[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 4, start_year, end_year,
                                                            discount_rate, battery_cost, pv_panel_investment,
-                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           diesel_gen_investment, inverter_cost,
                                                            pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range
                                                            )
@@ -1965,7 +1962,7 @@ class SettlementProcessor:
             pv_hybrid_capacity_5[g][:], \
             pv_hybrid_ren_share_5[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 5, start_year, end_year,
                                                            discount_rate, battery_cost, pv_panel_investment,
-                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           diesel_gen_investment, inverter_cost,
                                                            pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range
                                                            )
@@ -2039,8 +2036,8 @@ class SettlementProcessor:
         return pv_hybrid_investment, pv_hybrid_capacity
 
     def calculate_wind_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_wind_hybrid_calc,
-                                    battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+                                    battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                     min_pop):
 
         wind_curve = read_wind_environmental_data()
@@ -2092,32 +2089,32 @@ class SettlementProcessor:
         for w in wind_range:
             wind_hybrid_lcoe_1[w][:], \
             wind_hybrid_investment_1[w][:], \
-            wind_hybrid_capacity_1[w][:] = wind_diesel_hybrid(1, w, wind_curve, 1, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+            wind_hybrid_capacity_1[w][:] = wind_diesel_hybrid(1, w, wind_curve, 1, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_2[w][:], \
             wind_hybrid_investment_2[w][:], \
-            wind_hybrid_capacity_2[w][:] = wind_diesel_hybrid(1, w, wind_curve, 2, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+            wind_hybrid_capacity_2[w][:] = wind_diesel_hybrid(1, w, wind_curve, 2, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_3[w][:], \
             wind_hybrid_investment_3[w][:], \
-            wind_hybrid_capacity_3[w][:] = wind_diesel_hybrid(1, w, wind_curve, 3, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+            wind_hybrid_capacity_3[w][:] = wind_diesel_hybrid(1, w, wind_curve, 3, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_4[w][:], \
             wind_hybrid_investment_4[w][:], \
-            wind_hybrid_capacity_4[w][:] = wind_diesel_hybrid(1, w, wind_curve, 4, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+            wind_hybrid_capacity_4[w][:] = wind_diesel_hybrid(1, w, wind_curve, 4, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_5[w][:], \
             wind_hybrid_investment_5[w][:], \
-            wind_hybrid_capacity_5[w][:] = wind_diesel_hybrid(1, w, wind_curve, 5, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
-                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+            wind_hybrid_capacity_5[w][:] = wind_diesel_hybrid(1, w, wind_curve, 5, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost,
+                                    wind_life, diesel_life, inverter_life, discount_rate,
                                                               diesel_range=diesel_range)
 
         # logging.info('Stop')
@@ -2532,6 +2529,22 @@ class SettlementProcessor:
             self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(end_year)] = 1
             self.df.loc[
                 (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(end_year)] = national_HV_backbone_investment * 1000000
+
+        del self.df['GridCellAreaTemp']
+        del self.df['Wind_TD_Investment']
+        del self.df['Wind_MV_km']
+        del self.df['Wind_LV_km']
+        del self.df['RenewableShare' + "{}".format(intermediate_year)]
+        del self.df['RenewableShare' + "{}".format(end_year)]
+        del self.df['PVHybridGenCost' + "{}".format(intermediate_year)]
+        del self.df['PVHybridGenCost' + "{}".format(end_year)]
+        del self.df['PVHybridGenCap' + "{}".format(intermediate_year)]
+        del self.df['PVHybridGenCap' + "{}".format(end_year)]
+        del self.df['PVHybridGenLCOE' + "{}".format(intermediate_year)]
+        del self.df['PVHybridGenLCOE' + "{}".format(end_year)]
+        del self.df['PV_TD_Cost']
+        del self.df['PV_MV_km']
+        del self.df['PV_LV_km']
 
 
     def calc_summaries(self, df_summary, sumtechs, year, grid_option, expanding_MGs):

@@ -30,7 +30,6 @@ def pv_diesel_hybrid(
         pv_cost,  # =534,  # PV panel capital cost, USD/kW peak power
         diesel_cost,  # 150, # diesel generator capital cost, USD/kW rated power
         inverter_cost, # 80 + 142
-        charge_controller_cost,  # 142
         pv_life,  # 25
         diesel_life,  # 10
         pv_no=10,  # number of PV panel sizes simulated
@@ -46,6 +45,8 @@ def pv_diesel_hybrid(
     k_t = 0.005  # temperature factor of PV panels
     inverter_life = 10
     inv_eff = 0.92  # inverter_efficiency
+    charge_controller_cost = 0
+
 
     ghi = ghi_curve * ghi * 1000 / ghi_curve.sum()
     hour_numbers = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) * 365

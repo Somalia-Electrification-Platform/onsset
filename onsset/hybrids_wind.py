@@ -25,11 +25,9 @@ def wind_diesel_hybrid(
         wind_cost,  # =2800,  # PV panel capital cost, USD/kW peak power
         diesel_cost,  # 150, # diesel generator capital cost, USD/kW rated power
         inverter_cost,  # 80+142
-        charge_controller_cost,  # 142
         wind_life,  # 20
         diesel_life,  # 10
         inverter_life,
-        charge_controller_life,
         discount_rate,
         wind_no=10,  # number of wind panel sizes simulated
         diesel_no=10,  # number of diesel generators simulated

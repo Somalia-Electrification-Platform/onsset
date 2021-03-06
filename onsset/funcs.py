@@ -27,10 +27,10 @@ def tech_specifications(discount_rate, grid_generation_cost, grid_power_plants_c
                             tech_life=sa_pv_life,
                             om_costs=0.075,
                             capital_cost={float("inf"): sa_pv_capital_cost_5,
-                                          1: sa_pv_capital_cost_4,
-                                          0.100: sa_pv_capital_cost_3,
-                                          0.050: sa_pv_capital_cost_2,
-                                          0.020: sa_pv_capital_cost_1},
+                                          0.2: sa_pv_capital_cost_4,
+                                          0.08: sa_pv_capital_cost_3,
+                                          0.03: sa_pv_capital_cost_2,
+                                          0.006: sa_pv_capital_cost_1},
                             standalone=True
                             )
 
@@ -103,8 +103,8 @@ def summary_table_calc(self, yearsofanalysis, option, intensification_dist):
             code = codes[code_index]
             code_index += 1
 
-            summary.loc["Population{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_POP + '{}'.format(year)].sum()
-            summary.loc["NewConnections{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CONNECTIONS + '{}'.format(year)].sum()
+            summary.loc["Population{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_POP + '{}'.format(year)].sum() / 1000000
+            summary.loc["NewConnections{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CONNECTIONS + '{}'.format(year)].sum() /1000000
             summary.loc["Capacity{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CAPACITY + '{}'.format(year)].sum() / 1000
             summary.loc["Investment{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_INVESTMENT_COST + '{}'.format(year)].sum()
             code += 1
@@ -112,24 +112,24 @@ def summary_table_calc(self, yearsofanalysis, option, intensification_dist):
     index = techs + ['Total']
     columns = []
     for year in yearsofanalysis:
-        columns.append("Population{}".format(year))
-        columns.append("NewConnections{}".format(year))
+        columns.append("Population{} (Million)".format(year))
+        columns.append("NewConnections{} (Million)".format(year))
         columns.append("Capacity{} (MW)".format(year))
         columns.append("Investment{} (million USD)".format(year))
 
-    columns.append("NewConnectionsTotal")
+    columns.append("NewConnectionsTotal (Million)")
     columns.append("CapacityTotal (MW)")
     columns.append("InvestmentTotal (million USD)")
 
     summary_table = pd.DataFrame(index=index, columns=columns)
 
-    summary_table[columns[0]] = summary.iloc[0:5].astype(int).tolist() + [int(summary.iloc[0:5].sum())]
-    summary_table[columns[1]] = summary.iloc[5:10].astype(int).tolist() + [int(summary.iloc[5:10].sum())]
-    summary_table[columns[2]] = summary.iloc[10:15].astype(int).tolist() + [int(summary.iloc[10:15].sum())]
+    summary_table[columns[0]] = summary.iloc[0:5].tolist() + [summary.iloc[0:5].sum()]
+    summary_table[columns[1]] = summary.iloc[5:10].tolist() + [summary.iloc[5:10].sum()]
+    summary_table[columns[2]] = summary.iloc[10:15].tolist() + [summary.iloc[10:15].sum()]
     summary_table[columns[3]] = [round(x / 1e4) / 1e2 for x in summary.iloc[15:20].astype(float).tolist()] + [round(summary.iloc[15:20].sum() / 1e4) / 1e2]
-    summary_table[columns[4]] = summary.iloc[20:25].astype(int).tolist() + [int(summary.iloc[20:25].sum())]
-    summary_table[columns[5]] = summary.iloc[25:30].astype(int).tolist() + [int(summary.iloc[25:30].sum())]
-    summary_table[columns[6]] = summary.iloc[30:35].astype(int).tolist() + [int(summary.iloc[30:35].sum())]
+    summary_table[columns[4]] = summary.iloc[20:25].tolist() + [summary.iloc[20:25].sum()]
+    summary_table[columns[5]] = summary.iloc[25:30].tolist() + [summary.iloc[25:30].sum()]
+    summary_table[columns[6]] = summary.iloc[30:35].tolist() + [summary.iloc[30:35].sum()]
     summary_table[columns[7]] = [round(x / 1e4) / 1e2 for x in summary.iloc[35:40].astype(float).tolist()] + [round(summary.iloc[35:40].sum() / 1e4) / 1e2]
     summary_table[columns[8]] = summary_table[columns[1]] + summary_table[columns[5]]
     summary_table[columns[9]] = summary_table[columns[2]] + summary_table[columns[6]]
@@ -144,12 +144,12 @@ def summary_plots(summary_table, yearsofanalysis):
 
     columns = []
     for year in yearsofanalysis:
-        columns.append("Population{}".format(year))
-        columns.append("NewConnections{}".format(year))
+        columns.append("Population{} (Million)".format(year))
+        columns.append("NewConnections{} (Million)".format(year))
         columns.append("Capacity{} (MW)".format(year))
         columns.append("Investment{} (million USD)".format(year))
 
-    columns.append("NewConnectionsTotal")
+    columns.append("NewConnectionsTotal (Million)")
     columns.append("CapacityTotal (MW)")
     columns.append("InvestmentTotal (million USD)")
 
