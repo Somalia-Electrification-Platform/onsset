@@ -2487,7 +2487,7 @@ class SettlementProcessor:
             (self.df[SET_ENERGY_PER_CELL + "{}".format(year)] * mg_wind_hybrid_capacity)
 
     def online_summaries(self, start_year, intermediate_year, end_year, option, split_HV_backbone_investment,
-                          national_HV_backbone_investment):
+                          national_HV_backbone_investment, intensification):
         self.df['Buildings' + '{}'.format(start_year)] = np.round(self.df['Buildings'])
         self.df['Buildings' + '{}'.format(intermediate_year)] = np.round(
             self.df['Buildings'] * self.df['Pop' + '{}'.format(intermediate_year)] / self.df[
@@ -2504,6 +2504,11 @@ class SettlementProcessor:
                                                            self.df['NumPeoplePerHH']) + (
                                                                       self.df['NewConnections' + '{}'.format(end_year)] /
                                                                       self.df['NumPeoplePerHH']))
+        # Change expanded mini-grid code
+        if (option == 1) & (intensification > 0):
+            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2025"] == 1, SET_ELEC_FINAL_CODE + "2025"] = 2
+            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2030"] == 1, SET_ELEC_FINAL_CODE + "2030"] = 2
+            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2020"] == 1, SET_ELEC_FINAL_CODE + "2020"] = 2
 
         if option == 2:
             self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(end_year)] = 1

@@ -80,7 +80,7 @@ def summary_table(self, yearsofanalysis):
         elements.append("Capacity{}".format(year))
         elements.append("Investment{}".format(year))
 
-    techs = ["Grid", "SA_PV", "MG_Diesel", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
+    techs = ["Grid", "SA_PV", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
 
     sumtechs = []
     for year in yearsofanalysis:
@@ -114,22 +114,20 @@ def summary_table(self, yearsofanalysis):
 
     summary_table = pd.DataFrame(index=index, columns=columns)
 
-    summary_table[columns[0]] = summary.iloc[0:6].astype(int).tolist() + [int(summary.iloc[0:6].sum())]
-    summary_table[columns[1]] = summary.iloc[6:12].astype(int).tolist() + [int(summary.iloc[6:12].sum())]
-    summary_table[columns[2]] = summary.iloc[12:18].astype(int).tolist() + [int(summary.iloc[12:18].sum())]
-    summary_table[columns[3]] = [round(x / 1e4) / 1e2 for x in summary.iloc[18:24].astype(float).tolist()] + [
-        round(summary.iloc[18:224].sum() / 1e4) / 1e2]
-    summary_table[columns[4]] = summary.iloc[24:30].astype(int).tolist() + [int(summary.iloc[24:30].sum())]
-    summary_table[columns[5]] = summary.iloc[30:36].astype(int).tolist() + [int(summary.iloc[30:36].sum())]
-    summary_table[columns[6]] = summary.iloc[36:42].astype(int).tolist() + [int(summary.iloc[36:42].sum())]
-    summary_table[columns[7]] = [round(x / 1e4) / 1e2 for x in summary.iloc[42:48].astype(float).tolist()] + [
-        round(summary.iloc[42:48].sum() / 1e4) / 1e2]
+    summary_table[columns[0]] = summary.iloc[0:5].astype(int).tolist() + [int(summary.iloc[0:5].sum())]
+    summary_table[columns[1]] = summary.iloc[5:10].astype(int).tolist() + [int(summary.iloc[5:10].sum())]
+    summary_table[columns[2]] = summary.iloc[10:15].astype(int).tolist() + [int(summary.iloc[10:15].sum())]
+    summary_table[columns[3]] = [round(x / 1e4) / 1e2 for x in summary.iloc[15:20].astype(float).tolist()] + [round(summary.iloc[15:20].sum() / 1e4) / 1e2]
+    summary_table[columns[4]] = summary.iloc[20:25].astype(int).tolist() + [int(summary.iloc[20:25].sum())]
+    summary_table[columns[5]] = summary.iloc[25:30].astype(int).tolist() + [int(summary.iloc[25:30].sum())]
+    summary_table[columns[6]] = summary.iloc[30:35].astype(int).tolist() + [int(summary.iloc[30:35].sum())]
+    summary_table[columns[7]] = [round(x / 1e4) / 1e2 for x in summary.iloc[35:40].astype(float).tolist()] + [round(summary.iloc[35:40].sum() / 1e4) / 1e2]
 
     return summary_table
 
 def summary_plots(summary_table, yearsofanalysis):
-    colors = ['#73B2FF', '#EDD100', '#EDA800', '#1F6600', '#98E600', '#70A800', '#1FA800']
-    techs = ["Grid", "SA_PV", "MG_Diesel", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
+    colors = ['#73B2FF', '#FFD38C', '#FE5931', '#A56A56', '#00518E']
+    techs = ["Grid", "SA_PV", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
     techs_colors = dict(zip(techs, colors))
 
     columns = []

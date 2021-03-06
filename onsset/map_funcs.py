@@ -44,8 +44,8 @@ def urban_pop_map(self):
 
     return m
 
-def least_cost_map(self, intermediate_year, end_year):
-    results_df = self.loc[self[SET_POP_CALIB] > 500]
+def least_cost_map(self, intermediate_year, end_year, pop_threshold, result_year):
+    results_df = self.loc[self[SET_POP_CALIB] > pop_threshold]
     x_ave = self[SET_X_DEG].mean()
     y_ave = self[SET_Y_DEG].mean()
 
@@ -68,8 +68,8 @@ def least_cost_map(self, intermediate_year, end_year):
                                   3: 'Stand-alone PV'}
 
         # Data to show in popup, numbers have to transformed to strings first
-        LineOne = "Technology choice: " + str(technologies_available.get(row["FinalElecCode{}".format(end_year)]))
-        LineTwo = "Buildings: " + str(row['Buildings{}'.format(end_year)])
+        LineOne = "Technology choice: " + str(technologies_available.get(row["FinalElecCode{}".format(result_year)]))
+        LineTwo = "Buildings: " + str(row['Buildings{}'.format(result_year)])
         LineThree = "Investment cost in first timestep: " + str(round(row['InvestmentCost{}'.format(intermediate_year)])) + " USD"
         LineFour = "Investment cost in second timestep: " + str(round(row['InvestmentCost{}'.format(end_year)])) + " USD"
         LineFive = "Total investment cost: " + str(round(row['InvestmentCost{}'.format(end_year)]) + round(row['InvestmentCost{}'.format(intermediate_year)])) + " USD"
