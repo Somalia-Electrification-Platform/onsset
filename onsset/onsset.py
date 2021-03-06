@@ -1054,7 +1054,7 @@ class SettlementProcessor:
         print('{} households are modelled to be already electrified in the start year'.format(elec_pop))
 
     def grid_option(self, option, intensification_dist, year, distribution_om, distribution_losses, grid_losses,
-                    connection_cost_per_household, grid_power_plants_capital_cost,
+                    connection_cost_per_household, grid_power_plants_capital_cost, start_year,
                     grid_generation_cost, split_HV_transmission_cost, national_HV_transmission_cost):
 
         if (option == 1) & (intensification_dist == 0):
@@ -1066,6 +1066,7 @@ class SettlementProcessor:
         elif option == 1:
             self.df[SET_HV_DIST_CURRENT] = 999
             self.df[SET_HV_DIST_PLANNED] = 999
+            self.df.loc[self.df[SET_MV_DIST_CURRENT] == 0, SET_ELEC_FINAL_CODE + "{}".format(start_year)] = 1
             grid_cost = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, 'PVHybridGenLCOE' + "{}".format(year)].mean()
         elif option == 2:
             self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
