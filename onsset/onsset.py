@@ -83,6 +83,7 @@ SET_HEALTH_DEMAND = 'HealthDemand'
 SET_EDU_DEMAND = 'EducationDemand'
 SET_COMMERCIAL_DEMAND = 'CommercialDemand'
 SET_GRID_CELL_AREA = 'GridCellArea'
+SET_GRID_CELL_AREA_TEMP = 'GridCellAreaTemp'
 SET_MV_CONNECT_DIST = 'MVConnectDist'
 SET_HV_DIST_CURRENT = 'CurrentHVLineDist'
 SET_HV_DIST_PLANNED = 'PlannedHVLineDist'
@@ -791,6 +792,7 @@ class SettlementProcessor:
         self.df[SET_COMMERCIAL_DEMAND] = pd.to_numeric(self.df[SET_COMMERCIAL_DEMAND], errors='coerce')
         self.df[SET_ELEC_ORDER] = pd.to_numeric(self.df[SET_ELEC_ORDER], errors='coerce')
         self.df[SET_CONFLICT] = pd.to_numeric(self.df[SET_CONFLICT], errors='coerce')
+        self.df[SET_POP] = self.df[SET_POP].round(0)
 
         self.df.loc[self.df[SET_ELEC_POP] > self.df[SET_POP], SET_ELEC_POP] = self.df[SET_POP]
 
@@ -984,7 +986,8 @@ class SettlementProcessor:
         for num in tier_num:
             self.df[SET_WTFtier + "{}".format(num)] = wb_tiers_all[num]
 
-    def calibrate_current_pop_and_urban(self, pop_actual, major_urban_centers_pop, other_urban_areas_pop, other_urban_areas_road_dist):
+    def calibrate_current_pop_and_urban(self, pop_actual, major_urban_centers_pop, other_urban_areas_pop,
+                                        other_urban_areas_road_dist, num_people_per_hh_rural, num_people_per_hh_urban):
         """
         The function calibrates population values and urban/rural split (as estimated from GIS layers) based
         on actual values provided by the user for the start year.
@@ -1010,13 +1013,18 @@ class SettlementProcessor:
         pop_urb = self.df.loc[self.df[SET_URBAN] > 1, SET_POP_CALIB].sum()
         urban_modelled = pop_urb / pop_actual
 
-        print('The estimated start year population is {:.2f} million'.format(self.df[SET_POP].sum()/1000000))
-        print('The modelled urban ratio is {:.2f}. '
-              'If this is not acceptable, please readjust the input values'.format(urban_modelled))
+        print('The estimated start year population is {:.2f} million'.format(self.df[SET_POP_CALIB].sum()/1000000))
+        print('The modelled urban ratio is {:.2f}.'.format(urban_modelled))
+
+        self.df.loc[self.df[SET_URBAN] == 0, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
+        self.df.loc[self.df[SET_URBAN] == 1, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
+        self.df.loc[self.df[SET_URBAN] == 2, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_urban
+
+
 
         return pop_modelled, urban_modelled
 
-    def project_pop_and_urban(self, pop_modelled, urban_pop_growth, rural_pop_growth,  start_year, end_year, intermediate_year):
+    def project_pop_and_urban(self, urban_pop_growth, rural_pop_growth,  start_year, end_year, intermediate_year):
         """
         This function projects population and urban/rural ratio for the different years of the analysis
         """
@@ -1025,8 +1033,8 @@ class SettlementProcessor:
         # Project future population, with separate growth rates for urban and rural
         # logging.info('Population projection process')
 
-        yearly_urban_growth_rate = urban_pop_growth ** (1 / project_life)
-        yearly_rural_growth_rate = rural_pop_growth ** (1 / project_life)
+        yearly_urban_growth_rate = (1 + urban_pop_growth) # ** (1 / project_life)
+        yearly_rural_growth_rate = (1 + rural_pop_growth) # ** (1 / project_life)
 
         # RUN_PARAM: Define here the years for which results should be provided in the output file.
         years_of_analysis = [intermediate_year, end_year]
@@ -1038,32 +1046,52 @@ class SettlementProcessor:
                 else row[SET_POP_CALIB] * (yearly_rural_growth_rate ** (year - start_year)), axis=1)
 
         self.df[SET_POP + "{}".format(start_year)] = self.df.apply(lambda row: row[SET_POP_CALIB], axis=1)
+        print('The projected population by the end of the analysis is {:.2f} million'.format(self.df[SET_POP + "{}".format(year)].sum() / 1000000))
+        print('If this is not acceptable, please readjust the input values')
 
     def mini_grid_electrified(self, electrification_share):
-        self.df[SET_ELEC_POP_CALIB] = self.df[SET_POP_CALIB] * electrification_share
-        elec_pop = (self.df[SET_ELEC_POP_CALIB].sum()/self.df[SET_POP_CALIB].sum())
-        print('The modelled electrification ratio is {:.2f}'.format(elec_pop))
+        self.df[SET_ELEC_POP_CALIB] = 0
+        self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_ELEC_POP_CALIB] = self.df[SET_POP_CALIB] * electrification_share
+        elec_pop = round((self.df[SET_ELEC_POP_CALIB] / self.df[SET_NUM_PEOPLE_PER_HH]).sum())
+        print('{} households are modelled to be already electrified in the start year'.format(elec_pop))
 
-    def grid_option(self, option):
-        if option == 1:
+    def grid_option(self, option, intensification_dist, year, distribution_om, distribution_losses, grid_losses,
+                    connection_cost_per_household, grid_power_plants_capital_cost,
+                    grid_generation_cost, split_HV_transmission_cost, national_HV_transmission_cost):
+
+        if (option == 1) & (intensification_dist == 0):
             self.df[SET_MV_DIST_CURRENT] = 999
             self.df[SET_MV_DIST_PLANNED] = 999
             self.df[SET_HV_DIST_CURRENT] = 999
             self.df[SET_HV_DIST_PLANNED] = 999
-        elif option == 2:
+            grid_cost = 999
+        elif option == 1:
             self.df[SET_HV_DIST_CURRENT] = 999
             self.df[SET_HV_DIST_PLANNED] = 999
-        elif option == 3:
+            grid_cost = self.df.loc[self.df[SET_ELEC_CURRENT] == 1, 'PVHybridGenLCOE' + "{}".format(year)].mean()
+        elif option == 2:
             self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
             self.df[SET_MV_DIST_PLANNED] = self.df[SET_SUBSTATION_DIST]
             self.df[SET_HV_DIST_CURRENT] = self.df['HVLineDistSplit']
             self.df[SET_HV_DIST_PLANNED] = self.df['HVLineDistSplit']
+            grid_cost = grid_generation_cost + split_HV_transmission_cost
         elif option == 3:
             self.df[SET_MV_DIST_CURRENT] = self.df[SET_SUBSTATION_DIST]
             self.df[SET_MV_DIST_PLANNED] = self.df[SET_SUBSTATION_DIST]
             self.df[SET_HV_DIST_CURRENT] = self.df['HVLineDistSplit']
             self.df[SET_HV_DIST_PLANNED] = self.df['HVLineDistNational']
+            grid_cost = grid_generation_cost + national_HV_transmission_cost
 
+        # Centralized grid costs
+        grid_calc = Technology(om_of_td_lines=distribution_om,
+                               distribution_losses=grid_losses + distribution_losses,
+                               connection_cost_per_hh=connection_cost_per_household,
+                               base_to_peak_load_ratio=0.7,
+                               capacity_factor=1,
+                               tech_life=30,
+                               grid_capacity_investment=grid_power_plants_capital_cost,
+                               grid_price=grid_cost)
+        return grid_calc
 
     def elec_current_and_future(self, elec_actual, elec_actual_urban, elec_actual_rural, start_year,
                                 min_night_lights=0, min_pop=50, max_transformer_dist=2, max_mv_dist=2, max_hv_dist=5):
@@ -1272,8 +1300,8 @@ class SettlementProcessor:
 
         return elec_modelled, rural_elec_ratio, urban_elec_ratio
 
-    def pre_electrification(self, grid_price, year, time_step, end_year, grid_calc, grid_capacity_limit,
-                            grid_connect_limit):
+    def pre_electrification(self, grid_price, year, time_step, end_year, grid_calc, grid_capacity_limit=999999999,
+                            grid_connect_limit=999999999):
 
         """" ... """
 
@@ -1312,13 +1340,15 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_ELEC_CURRENT] == 1, SET_MV_CONNECT_DIST] = self.df[SET_HV_DIST_CURRENT]
         self.df[SET_MIN_TD_DIST] = self.df[[SET_MV_DIST_PLANNED, SET_HV_DIST_PLANNED]].min(axis=1)
 
-        self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] > 0), SET_GRID_CELL_AREA] *= self.df['Cellssum']/self.df['Cellscount']
-        self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] == 0), SET_GRID_CELL_AREA] *= 0.5
-        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df['Cellssum'] > 14), SET_GRID_CELL_AREA] *= self.df['Cellssum'] / self.df['Cellscount']
-        self.df[SET_GRID_CELL_AREA] *= 0.8
+        self.df[SET_GRID_CELL_AREA_TEMP] = self.df[SET_GRID_CELL_AREA] * 1
+        self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] > 0), SET_GRID_CELL_AREA_TEMP] *= self.df['Cellssum']/self.df['Cellscount'] * self.df[SET_GRID_CELL_AREA]
+        self.df.loc[(self.df[SET_URBAN] == 2) & (self.df['Cellssum'] == 0), SET_GRID_CELL_AREA_TEMP] *= 0.5
+        self.df.loc[(self.df[SET_URBAN] == 0) & (self.df['Cellssum'] > 14), SET_GRID_CELL_AREA_TEMP] *= self.df['Cellssum'] / self.df['Cellscount'] * self.df[SET_GRID_CELL_AREA]
+        self.df[SET_GRID_CELL_AREA_TEMP] *= 0.8
 
-    def elec_extension(self, grid_calc, max_dist, year, start_year, end_year, time_step, grid_capacity_limit,
-                       grid_connect_limit, new_investment, auto_intensification=0, prioritization=0,
+    def elec_extension(self, grid_calc, max_dist, year, start_year, end_year, time_step, new_investment,
+                       grid_capacity_limit=999999999,
+                       grid_connect_limit=999999999, auto_intensification=0, prioritization=0,
                        threshold=999999999):
         """
         Iterate through all electrified settlements and find which settlements can be economically connected to the grid
@@ -1494,7 +1524,7 @@ class SettlementProcessor:
                                total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
                                prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
                                num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                               grid_cell_area=self.df[SET_GRID_CELL_AREA],
+                               grid_cell_area=self.df[SET_GRID_CELL_AREA_TEMP],
                                base_to_peak=self.df[SET_BASE_TO_PEAK],
                                additional_mv_line_length=dist_adjusted,
                                elec_loop=elecorder,
@@ -1662,8 +1692,9 @@ class SettlementProcessor:
                 self.df[SET_NEW_CONNECTIONS + "{}".format(year)] < 0, SET_NEW_CONNECTIONS + "{}".format(year)] = 0
 
     # RESIDENTIAL DEMAND STARTS
-    def set_residential_demand(self, rural_tier, urban_tier, num_people_per_hh_rural,
-                               num_people_per_hh_urban, demand_factor):
+    def set_residential_demand(self, rural_demand_low, rural_demand_high, urban_demand_low, urban_demand_high,
+                                    num_people_per_hh_rural, num_people_per_hh_urban, urban_commercial_demand_factor,
+                                    rural_commercial_demand_factor):
         """this method defines residential demand per tier level for each target year
 
         Arguments
@@ -1680,104 +1711,14 @@ class SettlementProcessor:
 
         if max(self.df[SET_CAPITA_DEMAND]) == 0:
             # RUN_PARAM: This shall be changed if different urban/rural categorization is decided
-            wb_tier_rural = int(rural_tier)
-            wb_tier_urban_clusters = int(rural_tier)
-            wb_tier_urban_centers = int(urban_tier)
-
-            if wb_tier_urban_centers == 6:
-                self.df['ResidentialDemandTierUrbanCustom'] = 625 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Jubaland
-                self.df.loc[self.df['Admin_1'] == 'Gedo', 'ResidentialDemandTierUrbanCustom'] = 400 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Jubbada Dhexe', 'ResidentialDemandTierUrbanCustom'] = 400 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Jubbada Hoose', 'ResidentialDemandTierUrbanCustom'] = 400 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Mogadishu
-                self.df.loc[self.df['Admin_1'] == 'Banaadir', 'ResidentialDemandTierUrbanCustom'] = 183 * 2 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Southwest
-                self.df.loc[self.df['Admin_1'] == 'Bay', 'ResidentialDemandTierUrbanCustom'] = 298 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Shabeellaha Hoose', 'ResidentialDemandTierUrbanCustom'] = 298 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Bakool', 'ResidentialDemandTierUrbanCustom'] = 298 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Shabelle
-                self.df.loc[self.df['Admin_1'] == 'Shabeellaha Dhexe', 'ResidentialDemandTierUrbanCustom'] = 263 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Hiiraan', 'ResidentialDemandTierUrbanCustom'] = 263 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Galmudug
-                self.df.loc[self.df['Admin_1'] == 'Galguduud', 'ResidentialDemandTierUrbanCustom'] = 516 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Mudug', 'ResidentialDemandTierUrbanCustom'] = 516 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Puntland
-                self.df.loc[self.df['Admin_1'] == 'Nugaal', 'ResidentialDemandTierUrbanCustom'] = 585 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Bari', 'ResidentialDemandTierUrbanCustom'] = 585 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-
-
-            if wb_tier_urban_centers == 7:
-                self.df['ResidentialDemandTierUrbanCustom'] = 739 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Jubaland
-                self.df.loc[self.df['Admin_1'] == 'Gedo', 'ResidentialDemandTierUrbanCustom'] = 470 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Jubbada Dhexe', 'ResidentialDemandTierUrbanCustom'] = 470 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Jubbada Hoose', 'ResidentialDemandTierUrbanCustom'] = 470 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Mogadishu
-                self.df.loc[self.df['Admin_1'] == 'Banaadir', 'ResidentialDemandTierUrbanCustom'] = 215 * 2 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Southwest
-                self.df.loc[self.df['Admin_1'] == 'Bay', 'ResidentialDemandTierUrbanCustom'] = 299 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Shabeellaha Hoose', 'ResidentialDemandTierUrbanCustom'] = 299 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Bakool', 'ResidentialDemandTierUrbanCustom'] = 299 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Shabelle
-                self.df.loc[self.df['Admin_1'] == 'Shabeellaha Dhexe', 'ResidentialDemandTierUrbanCustom'] = 309 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Hiiraan', 'ResidentialDemandTierUrbanCustom'] = 309 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Galmudug
-                self.df.loc[self.df['Admin_1'] == 'Galguduud', 'ResidentialDemandTierUrbanCustom'] = 606 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Mudug', 'ResidentialDemandTierUrbanCustom'] = 606 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                # Puntland
-                self.df.loc[self.df['Admin_1'] == 'Nugaal', 'ResidentialDemandTierUrbanCustom'] = 686 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-                self.df.loc[self.df['Admin_1'] == 'Bari', 'ResidentialDemandTierUrbanCustom'] = 686 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-
-            if wb_tier_urban_centers == 8:
-                self.df['ResidentialDemandTierUrbanCustom'] = 1325 / 6.6 * self.df['ResidentialDemandTierCustomUrban']
-
-            if wb_tier_rural == 6:
-                self.df['ResidentialDemandTierRuralCustom'] = self.df['rural_low']
-            if wb_tier_rural == 7:
-                self.df['ResidentialDemandTierRuralCustom'] = self.df['rural_mid']
-            if wb_tier_rural == 8:
-                self.df['ResidentialDemandTierRuralCustom'] = self.df['rural_high']
-
-            if wb_tier_urban_centers >= 6:
-                wb_tier_urban_centers = 'UrbanCustom'
-            if wb_tier_urban_clusters >= 6:
-                wb_tier_urban_clusters = 'RuralCustom'
-            if wb_tier_rural >= 6:
-                wb_tier_rural = 'RuralCustom'
-
-
-
-            self.df[SET_CAPITA_DEMAND] = 0
-
-            # RUN_PARAM: This shall be changed if different urban/rural categorization is decided
             # Create new columns assigning number of people per household as per Urban/Rural type
-            self.df.loc[self.df[SET_URBAN] == 0, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
-            self.df.loc[self.df[SET_URBAN] == 1, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
-            self.df.loc[self.df[SET_URBAN] == 2, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_urban
 
-            # Define per capita residential demand
-            self.df.loc[self.df[SET_URBAN] == 0, SET_CAPITA_DEMAND] = self.df[
-                                                                          SET_RESIDENTIAL_TIER + str(
-                                                                              wb_tier_rural)]
-            self.df.loc[self.df[SET_URBAN] == 1, SET_CAPITA_DEMAND] = self.df[
-                                                                          SET_RESIDENTIAL_TIER + str(
-                                                                              wb_tier_urban_clusters)]
-            self.df.loc[self.df[SET_URBAN] == 2, SET_CAPITA_DEMAND] = self.df[
-                                                                          SET_RESIDENTIAL_TIER + str(
-                                                                              wb_tier_urban_centers)] * 1.25
+            self.df.loc[self.df[SET_URBAN] == 0, SET_CAPITA_DEMAND] = (urban_demand_low + (self.df['ResidentialDemandTierCustomRural'] - 1) * (rural_demand_high - rural_demand_low) / 4) / self.df[SET_NUM_PEOPLE_PER_HH]
+            self.df.loc[self.df[SET_URBAN] == 1, SET_CAPITA_DEMAND] = (urban_demand_low + (self.df['ResidentialDemandTierCustomRural'] - 1) * (rural_demand_high - rural_demand_low) / 4) / self.df[SET_NUM_PEOPLE_PER_HH]
+            self.df.loc[self.df[SET_URBAN] == 2, SET_CAPITA_DEMAND] = (urban_demand_low + (self.df['ResidentialDemandTierCustomUrban'] - 1) * (urban_demand_high - urban_demand_low) / 4) / self.df[SET_NUM_PEOPLE_PER_HH]
 
-            self.df.loc[self.df[SET_POP_CALIB] < 20 * 5.7, SET_CAPITA_DEMAND] = 60 / 5.7
-            if int(rural_tier) == 6:
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 2), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND], self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH] * 1.37 * 1.25)
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 0), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND],self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH] * 1.37)
-            if int(rural_tier) == 7:
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 2), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND], self.df['ExistingConsumption']/self.df[SET_NUM_PEOPLE_PER_HH] * 1.61 * 1.25)
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 0), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND], self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH] * 1.61)
-            if int(rural_tier) == 8:
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 2), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND], self.df['ExistingConsumption']/self.df[SET_NUM_PEOPLE_PER_HH] * 1.25)
-                self.df.loc[(self.df['KnownConsumption'] > 0) & (self.df[SET_URBAN] == 0), SET_CAPITA_DEMAND] = np.maximum(self.df[SET_CAPITA_DEMAND], self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH])
-
+            self.df.loc[self.df[SET_URBAN] == 2, SET_CAPITA_DEMAND] *= (1 + urban_commercial_demand_factor)
+            self.df.loc[self.df[SET_URBAN] < 2, SET_CAPITA_DEMAND] *= (1 + rural_commercial_demand_factor)
 
     def calculate_total_demand_per_settlement(self, year, productive_demand, time_step):
         """this method calculates total demand for each settlement per year
@@ -1796,8 +1737,6 @@ class SettlementProcessor:
         #     self.df[SET_CAPITA_DEMAND] * self.df[SET_NEW_CONNECTIONS + "{}".format(year)]
 
         self.df[SET_ENERGY_PER_CELL + "{}".format(year)] = self.df[SET_CAPITA_DEMAND] * self.df[SET_NEW_CONNECTIONS + "{}".format(year)]
-        if year == 2025:
-            self.df.loc[self.df['KnownConsumption'] > 0, SET_ENERGY_PER_CELL + "{}".format(year)] += self.df[SET_ELEC_POP_CALIB] * (self.df[SET_CAPITA_DEMAND] - self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH])
 
         # if year - time_step == start_year:
         self.df.loc[self.df[SET_URBAN] == 0, SET_TOTAL_ENERGY_PER_CELL] = \
@@ -1806,7 +1745,6 @@ class SettlementProcessor:
             self.df[SET_CAPITA_DEMAND] * self.df[SET_POP + "{}".format(year)]
         self.df.loc[self.df[SET_URBAN] == 2, SET_TOTAL_ENERGY_PER_CELL] = \
             self.df[SET_CAPITA_DEMAND] * self.df[SET_POP + "{}".format(year)]
-        self.df.loc[self.df['KnownConsumption'] > 0, SET_TOTAL_ENERGY_PER_CELL] += self.df[SET_ELEC_POP_CALIB] * (self.df[SET_CAPITA_DEMAND] - self.df['ExistingConsumption'] / self.df[SET_NUM_PEOPLE_PER_HH])
 
         # Add commercial demand
         # agri = True if 'y' in input('Include agricultural demand? <y/n> ') else False
@@ -1857,7 +1795,8 @@ class SettlementProcessor:
                     year - time_step)] == 99, SET_ENERGY_PER_CELL + "{}".format(year)] += self.df[SET_EDU_DEMAND]
 
     def set_scenario_variables(self, year, num_people_per_hh_rural, num_people_per_hh_urban, time_step, start_year,
-                               urban_tier, rural_tier, end_year_pop, productive_demand, demand_factor):
+                               rural_demand_low, rural_demand_high, urban_demand_low, urban_demand_high,
+                               urban_commercial_demand_factor, rural_commercial_demand_factor):
         """
         this method determines some basic parameters required in LCOE calculation
         it sets the basic scenario parameters that differ based on urban/rural so that they are in the table and
@@ -1877,15 +1816,11 @@ class SettlementProcessor:
 
         """
 
-        if end_year_pop == 0:
-            self.df[SET_POP + "{}".format(year)] = self.df[SET_POP + "{}".format(year) + 'Low']
-        else:
-            self.df[SET_POP + "{}".format(year)] = self.df[SET_POP + "{}".format(year) + 'High']
-
         self.calculate_new_connections(year, time_step, start_year)
-        self.set_residential_demand(rural_tier, urban_tier, num_people_per_hh_rural, num_people_per_hh_urban,
-                                    demand_factor)
-        self.calculate_total_demand_per_settlement(year, productive_demand, time_step)
+        self.set_residential_demand(rural_demand_low, rural_demand_high, urban_demand_low, urban_demand_high,
+                                    num_people_per_hh_rural, num_people_per_hh_urban, urban_commercial_demand_factor,
+                                    rural_commercial_demand_factor)
+        self.calculate_total_demand_per_settlement(year, 1, time_step)
 
         # TODO: REVIEW, added Tier column
         tier_1 = 38.7  # 38.7 refers to kWh/household/year. It is the mean value between Tier 1 and Tier 2
@@ -1916,8 +1851,10 @@ class SettlementProcessor:
         self.df.loc[(self.df[SET_TOTAL_ENERGY_PER_CELL] / self.df[SET_POP + "{}".format(year)]) * self.df[
             SET_NUM_PEOPLE_PER_HH] < 73, SET_BASE_TO_PEAK] = 0.3
 
-    def calculate_pv_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_pv_hybrid_calc, pv_adjustment_factor,
-                                  pv_panel_investment, diesel_gen_investment):
+    def calculate_pv_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_pv_hybrid_calc,
+                                  pv_panel_investment, diesel_gen_investment, discount_rate, battery_cost,
+                                  inverter_cost, charge_controller_cost, pv_life, diesel_life, inverter_life, min_pop):
+
         path_7 = os.path.join('Supplementary_files', 'Somalia_PV.csv')
         # path_8 = os.path.join('Supplementary_files', 'ninja_pv_8.0000_2.3000_uncorrected.csv')
         # path_9 = os.path.join('Supplementary_files', 'ninja_pv_9.0000_2.3000_uncorrected.csv')
@@ -1988,45 +1925,50 @@ class SettlementProcessor:
             pv_hybrid_investment_1[g][:], \
             pv_hybrid_capacity_1[g][:], \
             pv_hybrid_ren_share_1[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 1, start_year, end_year,
+                                                           discount_rate, battery_cost, pv_panel_investment,
+                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           pv_life, diesel_life, inverter_life,
                                                            diesel_range=diesel_range,
-                                                           pv_cost=pv_panel_investment,
-                                                           diesel_cost=diesel_gen_investment
                                                            )
 
             pv_hybrid_lcoe_2[g][:], \
             pv_hybrid_investment_2[g][:], \
             pv_hybrid_capacity_2[g][:], \
             pv_hybrid_ren_share_2[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 2, start_year, end_year,
-                                                           diesel_range=diesel_range,
-                                                           pv_cost=pv_panel_investment,
-                                                           diesel_cost=diesel_gen_investment
+                                                           discount_rate, battery_cost, pv_panel_investment,
+                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           pv_life, diesel_life, inverter_life,
+                                                           diesel_range=diesel_range
                                                            )
 
             pv_hybrid_lcoe_3[g][:], \
             pv_hybrid_investment_3[g][:], \
             pv_hybrid_capacity_3[g][:], \
             pv_hybrid_ren_share_3[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 3, start_year, end_year,
-                                                           diesel_range=diesel_range,
-                                                           pv_cost=pv_panel_investment,
-                                                           diesel_cost=diesel_gen_investment
+                                                           discount_rate, battery_cost, pv_panel_investment,
+                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           pv_life, diesel_life, inverter_life,
+                                                           diesel_range=diesel_range
                                                            )
 
             pv_hybrid_lcoe_4[g][:], \
             pv_hybrid_investment_4[g][:], \
             pv_hybrid_capacity_4[g][:], \
             pv_hybrid_ren_share_4[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 4, start_year, end_year,
-                                                           diesel_range=diesel_range,
-                                                           pv_cost=pv_panel_investment,
-                                                           diesel_cost=diesel_gen_investment
+                                                           discount_rate, battery_cost, pv_panel_investment,
+                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           pv_life, diesel_life, inverter_life,
+                                                           diesel_range=diesel_range
                                                            )
 
             pv_hybrid_lcoe_5[g][:], \
             pv_hybrid_investment_5[g][:], \
             pv_hybrid_capacity_5[g][:], \
             pv_hybrid_ren_share_5[g][:] = pv_diesel_hybrid(1, g, ghi_curve_7, temp_7, 5, start_year, end_year,
-                                                           diesel_range=diesel_range,
-                                                           pv_cost=pv_panel_investment,
-                                                           diesel_cost=diesel_gen_investment
+                                                           discount_rate, battery_cost, pv_panel_investment,
+                                                           diesel_gen_investment, inverter_cost, charge_controller_cost,
+                                                           pv_life, diesel_life, inverter_life,
+                                                           diesel_range=diesel_range
                                                            )
 
         def local_hybrid(ghi, diesel, tier):
@@ -2082,26 +2024,25 @@ class SettlementProcessor:
                                        total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
                                        prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
                                        num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                       grid_cell_area=self.df[SET_GRID_CELL_AREA],
+                                       grid_cell_area=self.df[SET_GRID_CELL_AREA_TEMP],
                                        base_to_peak=self.df[SET_BASE_TO_PEAK],
                                        hybrid_lcoe=hybrid_series[0],
                                        hybrid_investment=hybrid_series[1])
 
-        self.df.loc[(self.df[SET_POP_CALIB] < 30 * 5.7) & (
+        self.df.loc[(self.df[SET_POP_CALIB] < min_pop) & (
                 self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 8), SET_LCOE_MG_PV_HYBRID + "{}".format(
             year)] = 99
 
-        self.df[SET_LCOE_MG_PV_HYBRID + "{}".format(2030)] = self.df[SET_LCOE_MG_PV_HYBRID + "{}".format(2025)]
+        # self.df[SET_LCOE_MG_PV_HYBRID + "{}".format(2030)] = self.df[SET_LCOE_MG_PV_HYBRID + "{}".format(2025)]
 
-        self.df[SET_LCOE_MG_PV + "{}".format(year)] = 99
-        self.df[SET_LCOE_MG_PV + "{}".format(2030)] = 99
-        # self.df.loc[self.df['RenewableShare' + "{}".format(year)] > 0.99, SET_LCOE_MG_PV + "{}".format(year)] = self.df[SET_LCOE_MG_PV_HYBRID + "{}".format(year)]
-        mg_pv_investment = pv_hybrid_investment
-        # self.df.loc[self.df['RenewableShare' + "{}".format(year)] > 0.99, SET_LCOE_MG_PV_HYBRID + "{}".format(year)] = 99
+        # pv_hybrid_investment
 
-        return pv_hybrid_investment, pv_hybrid_capacity, mg_pv_investment
+        return pv_hybrid_investment, pv_hybrid_capacity
 
-    def calculate_wind_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_wind_hybrid_calc):
+    def calculate_wind_hybrids_lcoe(self, year, start_year, end_year, time_step, mg_wind_hybrid_calc,
+                                    battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
+                                    min_pop):
 
         wind_curve = read_wind_environmental_data()
 
@@ -2152,27 +2093,32 @@ class SettlementProcessor:
         for w in wind_range:
             wind_hybrid_lcoe_1[w][:], \
             wind_hybrid_investment_1[w][:], \
-            wind_hybrid_capacity_1[w][:] = wind_diesel_hybrid(1, w, wind_curve, 1, start_year, end_year,
+            wind_hybrid_capacity_1[w][:] = wind_diesel_hybrid(1, w, wind_curve, 1, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_2[w][:], \
             wind_hybrid_investment_2[w][:], \
-            wind_hybrid_capacity_2[w][:] = wind_diesel_hybrid(1, w, wind_curve, 2, start_year, end_year,
+            wind_hybrid_capacity_2[w][:] = wind_diesel_hybrid(1, w, wind_curve, 2, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_3[w][:], \
             wind_hybrid_investment_3[w][:], \
-            wind_hybrid_capacity_3[w][:] = wind_diesel_hybrid(1, w, wind_curve, 3, start_year, end_year,
+            wind_hybrid_capacity_3[w][:] = wind_diesel_hybrid(1, w, wind_curve, 3, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_4[w][:], \
             wind_hybrid_investment_4[w][:], \
-            wind_hybrid_capacity_4[w][:] = wind_diesel_hybrid(1, w, wind_curve, 4, start_year, end_year,
+            wind_hybrid_capacity_4[w][:] = wind_diesel_hybrid(1, w, wind_curve, 4, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
                                                               diesel_range=diesel_range)
 
             wind_hybrid_lcoe_5[w][:], \
             wind_hybrid_investment_5[w][:], \
-            wind_hybrid_capacity_5[w][:] = wind_diesel_hybrid(1, w, wind_curve, 5, start_year, end_year,
+            wind_hybrid_capacity_5[w][:] = wind_diesel_hybrid(1, w, wind_curve, 5, start_year, end_year, battery_cost, wind_cost, diesel_cost, inverter_cost, charge_controller_cost,
+                                    wind_life, diesel_life, inverter_life, charge_controller_life, discount_rate,
                                                               diesel_range=diesel_range)
 
         # logging.info('Stop')
@@ -2223,22 +2169,21 @@ class SettlementProcessor:
                                          total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
                                          prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
                                          num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                         grid_cell_area=self.df[SET_GRID_CELL_AREA],
+                                         grid_cell_area=self.df[SET_GRID_CELL_AREA_TEMP],
                                          base_to_peak=self.df[SET_BASE_TO_PEAK],
                                          hybrid_lcoe=hybrid_series[0],
                                          hybrid_investment=hybrid_series[1])
 
-        self.df.loc[(self.df[SET_POP_CALIB] < 30 * 5.7) & (
+        self.df.loc[(self.df[SET_POP_CALIB] < min_pop) & (
                 self.df[
                     SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 9), SET_LCOE_MG_WIND_HYBRID + "{}".format(
             year)] = 99
 
-        self.df[SET_LCOE_MG_WIND_HYBRID + "{}".format(2030)] = self.df[SET_LCOE_MG_WIND_HYBRID + "{}".format(2025)]
+        # self.df[SET_LCOE_MG_WIND_HYBRID + "{}".format(2030)] = self.df[SET_LCOE_MG_WIND_HYBRID + "{}".format(2025)]
 
         return wind_hybrid_investment, wind_hybrid_capacity
 
-    def calculate_off_grid_lcoes(self, mg_hydro_calc, mg_wind_calc, mg_pv_calc, sa_pv_calc, mg_diesel_calc,
-                                 sa_diesel_calc, year, end_year, time_step, diesel_techs=0):
+    def calculate_off_grid_lcoes(self, mg_hydro_calc, sa_pv_calc, year, end_year, time_step, min_mini_grid_pop):
         """
         Calculate the LCOEs for all off-grid technologies
 
@@ -2254,94 +2199,13 @@ class SettlementProcessor:
                                    total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
                                    prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
                                    num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                   grid_cell_area=self.df[SET_GRID_CELL_AREA],
+                                   grid_cell_area=self.df[SET_GRID_CELL_AREA_TEMP],
                                    base_to_peak=self.df[SET_BASE_TO_PEAK],
                                    additional_mv_line_length=self.df[SET_HYDRO_DIST])
 
-        self.df.loc[(self.df[SET_POP_CALIB] < 30 * 5.7) & (
+        self.df.loc[(self.df[SET_POP_CALIB] < min_mini_grid_pop) & (
                 self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 7), SET_LCOE_MG_HYDRO + "{}".format(
             year)] = 99
-
-        # #logging.info('Calculate minigrid PV LCOE')
-        # self.df[SET_LCOE_MG_PV + "{}".format(year)], mg_pv_investment = \
-        #     mg_pv_calc.get_lcoe(energy_per_cell=self.df[SET_ENERGY_PER_CELL + "{}".format(year)],
-        #                         start_year=year - time_step,
-        #                         end_year=end_year,
-        #                         people=self.df[SET_POP + "{}".format(year)],
-        #                         new_connections=self.df[SET_NEW_CONNECTIONS + "{}".format(year)],
-        #                         total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
-        #                         prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
-        #                         num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-        #                         grid_cell_area=self.df[SET_GRID_CELL_AREA],
-        #                         capacity_factor=self.df[SET_GHI] / HOURS_PER_YEAR)
-        # self.df.loc[self.df[SET_GHI] <= 1000, SET_LCOE_MG_PV + "{}".format(year)] = 99
-
-        self.df.loc[(self.df[SET_POP_CALIB] < 30 * 5.7) & (
-                self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 5), SET_LCOE_MG_PV + "{}".format(
-            year)] = 99
-
-        self.df[SET_LCOE_MG_WIND + "{}".format(year)] = 99
-        mg_wind_investment = mg_hydro_investment * 0
-        # logging.info('Calculate minigrid wind LCOE')
-        # self.df[SET_LCOE_MG_WIND + "{}".format(year)], mg_wind_investment = \
-        #     mg_wind_calc.get_lcoe(energy_per_cell=self.df[SET_ENERGY_PER_CELL + "{}".format(year)],
-        #                           start_year=year - time_step,
-        #                           end_year=end_year,
-        #                           people=self.df[SET_POP + "{}".format(year)],
-        #                           new_connections=self.df[SET_NEW_CONNECTIONS + "{}".format(year)],
-        #                           total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
-        #                           prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
-        #                           num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-        #                           grid_cell_area=self.df[SET_GRID_CELL_AREA],
-        #                           capacity_factor=self.df[SET_WINDCF])
-        # self.df.loc[self.df[SET_WINDCF] <= 0.1, SET_LCOE_MG_WIND + "{}".format(year)] = 99
-        #
-        # self.df.loc[(self.df[SET_POP_CALIB] < 50) & (
-        # self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 6), SET_LCOE_MG_WIND + "{}".format(year)] = 99
-
-        if diesel_techs == 0:
-            self.df[SET_LCOE_MG_DIESEL + "{}".format(year)] = 99
-            self.df[SET_LCOE_SA_DIESEL + "{}".format(year)] = 99
-            sa_diesel_investment = mg_hydro_investment * 0
-            mg_diesel_investment = mg_hydro_investment * 0
-        else:
-            # logging.info('Calculate minigrid diesel LCOE')
-            self.df[SET_LCOE_MG_DIESEL + "{}".format(year)], mg_diesel_investment = \
-                mg_diesel_calc.get_lcoe(energy_per_cell=self.df[SET_ENERGY_PER_CELL + "{}".format(year)],
-                                        start_year=year - time_step,
-                                        end_year=end_year,
-                                        people=self.df[SET_POP + "{}".format(year)],
-                                        new_connections=self.df[SET_NEW_CONNECTIONS + "{}".format(year)],
-                                        total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
-                                        prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
-                                        num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                        grid_cell_area=self.df[SET_GRID_CELL_AREA],
-                                        base_to_peak=self.df[SET_BASE_TO_PEAK],
-                                        fuel_cost=self.df[SET_MG_DIESEL_FUEL + "{}".format(year)],
-                                        )
-
-            self.df.loc[(self.df[SET_POP_CALIB] < 30 * 5.7) & (
-                    self.df[
-                        SET_ELEC_FINAL_CODE + "{}".format(year - time_step)] != 4), SET_LCOE_MG_DIESEL + "{}".format(
-                year)] = 99
-
-            # logging.info('Calculate standalone diesel LCOE')
-            self.df[SET_LCOE_SA_DIESEL + "{}".format(year)], sa_diesel_investment = \
-                sa_diesel_calc.get_lcoe(energy_per_cell=self.df[SET_ENERGY_PER_CELL + "{}".format(year)],
-                                        start_year=year - time_step,
-                                        end_year=end_year,
-                                        people=self.df[SET_POP + "{}".format(year)],
-                                        new_connections=self.df[SET_NEW_CONNECTIONS + "{}".format(year)],
-                                        total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
-                                        prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
-                                        num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                        grid_cell_area=self.df[SET_GRID_CELL_AREA],
-                                        base_to_peak=self.df[SET_BASE_TO_PEAK],
-                                        fuel_cost=self.df[SET_SA_DIESEL_FUEL + "{}".format(year)],
-                                        )
-
-            self.df[SET_LCOE_SA_DIESEL + "{}".format(year)] = 99  # ToDo
-            sa_diesel_investment = mg_hydro_investment * 0
 
         # logging.info('Calculate standalone PV LCOE')
         self.df[SET_LCOE_SA_PV + "{}".format(year)], sa_pv_investment = \
@@ -2353,7 +2217,7 @@ class SettlementProcessor:
                                 total_energy_per_cell=self.df[SET_TOTAL_ENERGY_PER_CELL],
                                 prev_code=self.df[SET_ELEC_FINAL_CODE + "{}".format(year - time_step)],
                                 num_people_per_hh=self.df[SET_NUM_PEOPLE_PER_HH],
-                                grid_cell_area=self.df[SET_GRID_CELL_AREA],
+                                grid_cell_area=self.df[SET_GRID_CELL_AREA_TEMP],
                                 base_to_peak=sa_pv_calc.base_to_peak_load_ratio,
                                 capacity_factor=self.df[SET_GHI] / HOURS_PER_YEAR)
         self.df.loc[self.df[SET_GHI] <= 1000, SET_LCOE_SA_PV + "{}".format(year)] = 99
@@ -2364,8 +2228,7 @@ class SettlementProcessor:
 
         self.choose_minimum_off_grid_tech(year, mg_hydro_calc)
 
-        return sa_diesel_investment, sa_pv_investment, mg_diesel_investment, mg_wind_investment, \
-               mg_hydro_investment
+        return sa_pv_investment, mg_hydro_investment
 
     def choose_minimum_off_grid_tech(self, year, mg_hydro_calc):
         """Choose minimum LCOE off-grid technology
@@ -2381,11 +2244,7 @@ class SettlementProcessor:
 
         # logging.info('Determine minimum technology (off-grid)')
         self.df[SET_MIN_OFFGRID + "{}".format(year)] = self.df[[SET_LCOE_SA_PV + "{}".format(year),
-                                                                SET_LCOE_MG_WIND + "{}".format(year),
-                                                                SET_LCOE_MG_PV + "{}".format(year),
                                                                 SET_LCOE_MG_HYDRO + "{}".format(year),
-                                                                SET_LCOE_MG_DIESEL + "{}".format(year),
-                                                                SET_LCOE_SA_DIESEL + "{}".format(year),
                                                                 SET_LCOE_MG_PV_HYBRID + "{}".format(year),
                                                                 SET_LCOE_MG_WIND_HYBRID + "{}".format(year)]].T.idxmin()
 
@@ -2415,21 +2274,13 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_HYDRO_DIST] > max_hydro_dist, SET_LCOE_MG_HYDRO + "{}".format(year)] = 99
 
         self.df[SET_MIN_OFFGRID + "{}".format(year)] = self.df[[SET_LCOE_SA_PV + "{}".format(year),
-                                                                SET_LCOE_MG_WIND + "{}".format(year),
-                                                                SET_LCOE_MG_PV + "{}".format(year),
                                                                 SET_LCOE_MG_HYDRO + "{}".format(year),
-                                                                SET_LCOE_MG_DIESEL + "{}".format(year),
-                                                                SET_LCOE_SA_DIESEL + "{}".format(year),
                                                                 SET_LCOE_MG_PV_HYBRID + "{}".format(year),
                                                                 SET_LCOE_MG_WIND_HYBRID + "{}".format(year)]].T.idxmin()
 
         # logging.info('Determine minimum tech LCOE')
         self.df[SET_MIN_OFFGRID_LCOE + "{}".format(year)] = self.df[[SET_LCOE_SA_PV + "{}".format(year),
-                                                                     SET_LCOE_MG_WIND + "{}".format(year),
-                                                                     SET_LCOE_MG_PV + "{}".format(year),
                                                                      SET_LCOE_MG_HYDRO + "{}".format(year),
-                                                                     SET_LCOE_MG_DIESEL + "{}".format(year),
-                                                                     SET_LCOE_SA_DIESEL + "{}".format(year),
                                                                      SET_LCOE_MG_PV_HYBRID + "{}".format(year),
                                                                      SET_LCOE_MG_WIND_HYBRID + "{}".format(
                                                                          year)]].T.min()
@@ -2475,11 +2326,7 @@ class SettlementProcessor:
         # #logging.info('Determine minimum overall')
         self.df[SET_MIN_OVERALL + "{}".format(year)] = self.df[[SET_LCOE_GRID + "{}".format(year),
                                                                 SET_LCOE_SA_PV + "{}".format(year),
-                                                                SET_LCOE_MG_WIND + "{}".format(year),
-                                                                SET_LCOE_MG_PV + "{}".format(year),
                                                                 SET_LCOE_MG_HYDRO + "{}".format(year),
-                                                                SET_LCOE_MG_DIESEL + "{}".format(year),
-                                                                SET_LCOE_SA_DIESEL + "{}".format(year),
                                                                 SET_LCOE_MG_PV_HYBRID + "{}".format(year),
                                                                 SET_LCOE_MG_WIND_HYBRID + "{}".format(year)]].T.idxmin()
 
@@ -2494,11 +2341,7 @@ class SettlementProcessor:
         # #logging.info('Determine minimum overall LCOE')
         self.df[SET_MIN_OVERALL_LCOE + "{}".format(year)] = self.df[[SET_LCOE_GRID + "{}".format(year),
                                                                      SET_LCOE_SA_PV + "{}".format(year),
-                                                                     SET_LCOE_MG_WIND + "{}".format(year),
-                                                                     SET_LCOE_MG_PV + "{}".format(year),
                                                                      SET_LCOE_MG_HYDRO + "{}".format(year),
-                                                                     SET_LCOE_MG_DIESEL + "{}".format(year),
-                                                                     SET_LCOE_SA_DIESEL + "{}".format(year),
                                                                      SET_LCOE_MG_PV_HYBRID + "{}".format(year),
                                                                      SET_LCOE_MG_WIND_HYBRID + "{}".format(
                                                                          year)]].T.min()
@@ -2518,8 +2361,7 @@ class SettlementProcessor:
             self.df.loc[self.df[SET_MIN_OVERALL + "{}".format(year)] == key,
                         SET_MIN_OVERALL_CODE + "{}".format(year)] = codes[key]
 
-    def calculate_investments(self, sa_diesel_investment, sa_pv_investment, mg_diesel_investment, mg_pv_investment,
-                              mg_wind_investment, mg_hydro_investment, mg_pv_hybrid_investment,
+    def calculate_investments(self, sa_pv_investment, mg_hydro_investment, mg_pv_hybrid_investment,
                               mg_wind_hybrid_investment, grid_investment, year, expanding_MGs):
 
         # logging.info('Calculate investment cost')
@@ -2538,14 +2380,12 @@ class SettlementProcessor:
 
         if expanding_MGs == 1:
             self.df[
-                SET_INVESTMENT_COST + "{}".format(year)] = grid * mg_pv_hybrid_investment + sa_diesel * sa_diesel_investment + \
-                                                           sa_pv * sa_pv_investment + mg_diesel * mg_diesel_investment + mg_pv * mg_pv_investment + \
-                                                           mg_wind * mg_wind_investment + mg_hydro * mg_hydro_investment + mg_pv_hybrid * mg_pv_hybrid_investment + \
+                SET_INVESTMENT_COST + "{}".format(year)] = grid * mg_pv_hybrid_investment + sa_pv * sa_pv_investment + \
+                                                           mg_hydro * mg_hydro_investment + mg_pv_hybrid * mg_pv_hybrid_investment + \
                                                            mg_wind_hybrid * mg_wind_hybrid_investment
         else:
-            self.df[SET_INVESTMENT_COST + "{}".format(year)] = grid * grid_investment + sa_diesel * sa_diesel_investment + \
-                                                               sa_pv * sa_pv_investment + mg_diesel * mg_diesel_investment + mg_pv * mg_pv_investment + \
-                                                               mg_wind * mg_wind_investment + mg_hydro * mg_hydro_investment + mg_pv_hybrid * mg_pv_hybrid_investment + \
+            self.df[SET_INVESTMENT_COST + "{}".format(year)] = grid * grid_investment + sa_pv * sa_pv_investment + \
+                                                               mg_hydro * mg_hydro_investment + mg_pv_hybrid * mg_pv_hybrid_investment + \
                                                                mg_wind_hybrid * mg_wind_hybrid_investment
 
     def apply_limitations(self, eleclimit, year, time_step, prioritization, auto_densification=0):
@@ -2614,10 +2454,9 @@ class SettlementProcessor:
         self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] = self.df[SET_MIN_OVERALL_CODE + "{}".format(year)]
         self.df.loc[(self.df[SET_LIMIT + "{}".format(year)] == 0), SET_ELEC_FINAL_CODE + "{}".format(year)] = 99
 
-        print("Le taux d'électrification atteint en {} est {:.1f} %".format(year, elecrate * 100))
+        print("The electrification achieved in {} is {:.1f} %".format(year, elecrate * 100))
 
-    def calculate_new_capacity(self, mg_pv_hybrid_capacity, mg_wind_hybrid_capacity, mg_hydro_calc, mg_wind_calc,
-                               mg_pv_calc, sa_pv_calc, mg_diesel_calc, sa_diesel_calc, grid_calc, year, expanding_MGs):
+    def calculate_new_capacity(self, mg_pv_hybrid_capacity, mg_wind_hybrid_capacity, mg_hydro_calc, sa_pv_calc, grid_calc, year, expanding_MGs):
 
         # logging.info('Calculate new capacity')
         self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 99, SET_NEW_CAPACITY + "{}".format(year)] = 0
@@ -2636,26 +2475,6 @@ class SettlementProcessor:
                 (HOURS_PER_YEAR * mg_hydro_calc.capacity_factor * self.df[SET_BASE_TO_PEAK] *
                  (1 - mg_hydro_calc.distribution_losses)))
 
-        self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5, SET_NEW_CAPACITY + "{}".format(year)] = (
-                (self.df[SET_ENERGY_PER_CELL + "{}".format(year)]) /
-                (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * self.df[SET_BASE_TO_PEAK] *
-                 (1 - mg_pv_calc.distribution_losses)))
-
-        self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6, SET_NEW_CAPACITY + "{}".format(year)] = (
-                (self.df[SET_ENERGY_PER_CELL + "{}".format(year)]) /
-                (HOURS_PER_YEAR * self.df[SET_WINDCF] * self.df[SET_BASE_TO_PEAK] *
-                 (1 - mg_wind_calc.distribution_losses)))
-
-        self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4, SET_NEW_CAPACITY + "{}".format(year)] = (
-                (self.df[SET_ENERGY_PER_CELL + "{}".format(year)]) /
-                (HOURS_PER_YEAR * mg_diesel_calc.capacity_factor * self.df[SET_BASE_TO_PEAK] *
-                 (1 - mg_diesel_calc.distribution_losses)))
-
-        self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2, SET_NEW_CAPACITY + "{}".format(year)] = (
-                (self.df[SET_ENERGY_PER_CELL + "{}".format(year)]) /
-                (HOURS_PER_YEAR * sa_diesel_calc.capacity_factor * self.df[SET_BASE_TO_PEAK] *
-                 (1 - sa_diesel_calc.distribution_losses)))
-
         self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3, SET_NEW_CAPACITY + "{}".format(year)] = (
                 (self.df[SET_ENERGY_PER_CELL + "{}".format(year)]) /
                 (HOURS_PER_YEAR * (self.df[SET_GHI] / HOURS_PER_YEAR) * sa_pv_calc.base_to_peak_load_ratio *
@@ -2667,223 +2486,252 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9, SET_NEW_CAPACITY + "{}".format(year)] = \
             (self.df[SET_ENERGY_PER_CELL + "{}".format(year)] * mg_wind_hybrid_capacity)
 
+    def online_summaries(self, start_year, intermediate_year, end_year, option, split_HV_backbone_investment,
+                          national_HV_backbone_investment):
+        self.df['Buildings' + '{}'.format(start_year)] = np.round(self.df['Buildings'])
+        self.df['Buildings' + '{}'.format(intermediate_year)] = np.round(
+            self.df['Buildings'] * self.df['Pop' + '{}'.format(intermediate_year)] / self.df[
+                'Pop' + '{}'.format(intermediate_year)])
+        self.df['Buildings' + '{}'.format(end_year)] = np.round(
+            self.df['Buildings'] * self.df['Pop' + '{}'.format(end_year)] / self.df['Pop' '{}'.format(intermediate_year)])
+
+        self.df['CostPerConnection' + '{}'.format(intermediate_year)] = self.df['InvestmentCost' + '{}'.format(
+            intermediate_year)] / (self.df['NewConnections' + '{}'.format(intermediate_year)] / self.df['NumPeoplePerHH'])
+        self.df['CostPerConnection' + '{}'.format(end_year)] = self.df['InvestmentCost' + '{}'.format(end_year)] / (
+                    self.df['NewConnections' + '{}'.format(end_year)] / self.df['NumPeoplePerHH'])
+        self.df['CostPerConnection'] = (self.df['InvestmentCost' + '{}'.format(intermediate_year)] + self.df[
+            'InvestmentCost' + '{}'.format(end_year)]) / ((self.df['NewConnections' + '{}'.format(intermediate_year)] /
+                                                           self.df['NumPeoplePerHH']) + (
+                                                                      self.df['NewConnections' + '{}'.format(end_year)] /
+                                                                      self.df['NumPeoplePerHH']))
+
+        if option == 2:
+            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(end_year)] = 1
+            self.df.loc[
+                (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(end_year)] = split_HV_backbone_investment * 1000000
+        elif option == 3:
+            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(end_year)] = 1
+            self.df.loc[
+                (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(end_year)] = national_HV_backbone_investment * 1000000
+
+
     def calc_summaries(self, df_summary, sumtechs, year, grid_option, expanding_MGs):
 
-        if (grid_option == 2) & (year == 2030):
-            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(year)] = 1
-            self.df.loc[
-                (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(year)] = 760 * 1000000
-        elif (grid_option == 3) & (year == 2030):
-            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(year)] = 1
-            self.df.loc[
-                (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(year)] = 1280 * 1000000
-        elif year == 2030:
-            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(2025)] = 1
-            self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(2030)] = 1
+            if (grid_option == 2) & (year == 2030):
+                self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(year)] = 1
+                self.df.loc[
+                    (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(year)] = 760 * 1000000
+            elif (grid_option == 3) & (year == 2030):
+                self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(year)] = 1
+                self.df.loc[
+                    (self.df['Admin_1'] == 'Transmission_lines'), SET_INVESTMENT_COST + "{}".format(year)] = 1280 * 1000000
+            elif year == 2030:
+                self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(2025)] = 1
+                self.df.loc[(self.df['Admin_1'] == 'Transmission_lines'), SET_ELEC_FINAL_CODE + "{}".format(2030)] = 1
 
-        """The next section calculates the summaries for technology split,
-        consumption added and total investment cost"""
+            """The next section calculates the summaries for technology split,
+            consumption added and total investment cost"""
 
-        # logging.info('Calculate summaries')
+            # logging.info('Calculate summaries')
 
-        # Population Summaries
-        df_summary[year][sumtechs[0]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            # Population Summaries
+            df_summary[year][sumtechs[0]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[1]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[1]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[2]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
-                                                                self.df[SET_POP + "{}".format(year)] > 0)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[2]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
+                                                                    self.df[SET_POP + "{}".format(year)] > 0)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[3]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[3]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[4]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[4]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[5]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[5]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[6]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[6]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[7]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[7]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        df_summary[year][sumtechs[8]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_POP + "{}".format(year)])
+            df_summary[year][sumtechs[8]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_POP + "{}".format(year)])
 
-        # New_Connection Summaries
-        df_summary[year][sumtechs[9]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
-                                                        (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                            [SET_NEW_CONNECTIONS + "{}".format(year)])
+            # New_Connection Summaries
+            df_summary[year][sumtechs[9]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
+                                                            (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[10]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[10]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[11]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
-                                                                 self.df[SET_POP + "{}".format(year)] > 0)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[11]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
+                                                                     self.df[SET_POP + "{}".format(year)] > 0)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[12]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[12]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[13]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[13]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[14]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[14]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[15]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[15]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[16]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[16]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        df_summary[year][sumtechs[17]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CONNECTIONS + "{}".format(year)])
+            df_summary[year][sumtechs[17]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CONNECTIONS + "{}".format(year)])
 
-        # Capacity Summaries
-        df_summary[year][sumtechs[18]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            # Capacity Summaries
+            df_summary[year][sumtechs[18]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[19]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[19]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[20]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
-                                                                 self.df[SET_POP + "{}".format(year)] > 0)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[20]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
+                                                                     self.df[SET_POP + "{}".format(year)] > 0)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[21]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[21]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[22]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[22]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[23]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[23]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[24]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[24]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[25]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[25]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        df_summary[year][sumtechs[26]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_NEW_CAPACITY + "{}".format(year)])
+            df_summary[year][sumtechs[26]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_NEW_CAPACITY + "{}".format(year)])
 
-        # Investment Summaries
-        df_summary[year][sumtechs[27]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            # Investment Summaries
+            df_summary[year][sumtechs[27]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 1) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[28]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[28]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 2) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[29]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
-                                                                 self.df[SET_POP + "{}".format(year)] > 0)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[29]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 3) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1) & (
+                                                                     self.df[SET_POP + "{}".format(year)] > 0)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[30]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[30]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 4) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[31]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[31]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 5) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[32]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[32]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 6) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[33]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[33]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 7) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[34]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[34]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 8) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        df_summary[year][sumtechs[35]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
-                                                         (self.df[SET_LIMIT + "{}".format(year)] == 1)]
-                                             [SET_INVESTMENT_COST + "{}".format(year)])
+            df_summary[year][sumtechs[35]] = sum(self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "{}".format(year)] == 9) &
+                                                             (self.df[SET_LIMIT + "{}".format(year)] == 1)]
+                                                 [SET_INVESTMENT_COST + "{}".format(year)])
 
-        # Change expanded mini-grid code
-        if (expanding_MGs == 1) & (year == 2030):
-            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2025"] == 1, SET_ELEC_FINAL_CODE + "2025"] = 2
-            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2030"] == 1, SET_ELEC_FINAL_CODE + "2030"] = 2
-            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2020"] == 1, SET_ELEC_FINAL_CODE + "2020"] = 2
+            # # Change expanded mini-grid code
+            # if (expanding_MGs == 1) & (year == 2030):
+            #     self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2025"] == 1, SET_ELEC_FINAL_CODE + "2025"] = 2
+            #     self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2030"] == 1, SET_ELEC_FINAL_CODE + "2030"] = 2
+            #     self.df.loc[self.df[SET_ELEC_FINAL_CODE + "2020"] == 1, SET_ELEC_FINAL_CODE + "2020"] = 2
+            #
+            # # Change MG Hydro code
+            # if year == 2030:
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 7), SET_ELEC_FINAL_CODE + "2020"] = 6
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 7), SET_ELEC_FINAL_CODE + "2025"] = 6
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 7), SET_ELEC_FINAL_CODE + "2030"] = 6
+            #
+            # # Change SA PV code
+            # if year == 2030:
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 3), SET_ELEC_FINAL_CODE + "2020"] = 7
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 3), SET_ELEC_FINAL_CODE + "2025"] = 7
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 3), SET_ELEC_FINAL_CODE + "2030"] = 7
+            #
+            # # Change MG Diesel code
+            # if year == 2030:
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 4), SET_ELEC_FINAL_CODE + "2020"] = 3
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 4), SET_ELEC_FINAL_CODE + "2025"] = 3
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 4), SET_ELEC_FINAL_CODE + "2030"] = 3
+            #
+            # # Change PV hybrid code
+            # if year == 2030:
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 8), SET_ELEC_FINAL_CODE + "2020"] = 4
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 8), SET_ELEC_FINAL_CODE + "2025"] = 4
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 8), SET_ELEC_FINAL_CODE + "2030"] = 4
+            #
+            # # Change Wind hybrid code
+            # if year == 2030:
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 9), SET_ELEC_FINAL_CODE + "2020"] = 5
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 9), SET_ELEC_FINAL_CODE + "2025"] = 5
+            #     self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 9), SET_ELEC_FINAL_CODE + "2030"] = 5
+            #     del self.df['ExistingConsumption']
+            #     del self.df['KnownConsumption']
 
-        # Change MG Hydro code
-        if year == 2030:
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 7), SET_ELEC_FINAL_CODE + "2020"] = 6
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 7), SET_ELEC_FINAL_CODE + "2025"] = 6
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 7), SET_ELEC_FINAL_CODE + "2030"] = 6
+            if year == 2030:
+                self.df['Buildings2020'] = np.round(self.df['Buildings'])
+                self.df['Buildings2025'] = np.round(self.df['Buildings'] * self.df['Pop2025'] / self.df['Pop2020'])
+                self.df['Buildings2030'] = np.round(self.df['Buildings'] * self.df['Pop2030'] / self.df['Pop2020'])
 
-        # Change SA PV code
-        if year == 2030:
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 3), SET_ELEC_FINAL_CODE + "2020"] = 7
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 3), SET_ELEC_FINAL_CODE + "2025"] = 7
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 3), SET_ELEC_FINAL_CODE + "2030"] = 7
-
-        # Change MG Diesel code
-        if year == 2030:
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 4), SET_ELEC_FINAL_CODE + "2020"] = 3
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 4), SET_ELEC_FINAL_CODE + "2025"] = 3
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 4), SET_ELEC_FINAL_CODE + "2030"] = 3
-
-        # Change PV hybrid code
-        if year == 2030:
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 8), SET_ELEC_FINAL_CODE + "2020"] = 4
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 8), SET_ELEC_FINAL_CODE + "2025"] = 4
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 8), SET_ELEC_FINAL_CODE + "2030"] = 4
-
-        # Change Wind hybrid code
-        if year == 2030:
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2020"] == 9), SET_ELEC_FINAL_CODE + "2020"] = 5
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2025"] == 9), SET_ELEC_FINAL_CODE + "2025"] = 5
-            self.df.loc[(self.df[SET_ELEC_FINAL_CODE + "2030"] == 9), SET_ELEC_FINAL_CODE + "2030"] = 5
-            del self.df['ExistingConsumption']
-            del self.df['KnownConsumption']
-            
-        if year == 2030:
-            self.df['Buildings2020'] = np.round(self.df['Buildings'])
-            self.df['Buildings2025'] = np.round(self.df['Buildings'] * self.df['Pop2025'] / self.df['Pop2020'])
-            self.df['Buildings2030'] = np.round(self.df['Buildings'] * self.df['Pop2030'] / self.df['Pop2020'])
-
-            self.df['CostPerConnection2025'] = self.df['InvestmentCost2025'] / (self.df['NewConnections2025'] / self.df['NumPeoplePerHH'])
-            self.df['CostPerConnection2030'] = self.df['InvestmentCost2030'] / (self.df['NewConnections2030'] / self.df['NumPeoplePerHH'])
-            self.df['CostPerConnection'] = (self.df['InvestmentCost2025'] + self.df['InvestmentCost2030']) / ((self.df['NewConnections2025'] / self.df['NumPeoplePerHH']) + (self.df['NewConnections2030'] / self.df['NumPeoplePerHH']))
+                self.df['CostPerConnection2025'] = self.df['InvestmentCost2025'] / (self.df['NewConnections2025'] / self.df['NumPeoplePerHH'])
+                self.df['CostPerConnection2030'] = self.df['InvestmentCost2030'] / (self.df['NewConnections2030'] / self.df['NumPeoplePerHH'])
+                self.df['CostPerConnection'] = (self.df['InvestmentCost2025'] + self.df['InvestmentCost2030']) / ((self.df['NewConnections2025'] / self.df['NumPeoplePerHH']) + (self.df['NewConnections2030'] / self.df['NumPeoplePerHH']))
 
 
 

@@ -21,26 +21,28 @@ def wind_diesel_hybrid(
         tier,
         start_year,
         end_year,
-        wind_no=15,  # number of wind panel sizes simulated
-        diesel_no=15,  # number of diesel generators simulated
-        discount_rate=0.10,
+        battery_cost,  # =139 battery capital capital cost, USD/kWh of storage capacity
+        wind_cost,  # =2800,  # PV panel capital cost, USD/kW peak power
+        diesel_cost,  # 150, # diesel generator capital cost, USD/kW rated power
+        inverter_cost,  # 80+142
+        charge_controller_cost,  # 142
+        wind_life,  # 20
+        diesel_life,  # 10
+        inverter_life,
+        charge_controller_life,
+        discount_rate,
+        wind_no=10,  # number of wind panel sizes simulated
+        diesel_no=10,  # number of diesel generators simulated
         diesel_range=[0.7]
 ):
     n_chg = 0.92  # charge efficiency of battery
     n_dis = 0.92  # discharge efficiency of battery
-    lpsp_max = 0.10  # maximum loss of load allowed over the year, in share of kWh
-    battery_cost = 139  # battery capital capital cost, USD/kWh of storage capacity
-    wind_cost = 2800  # Wind turbine capital cost, USD/kW peak power
-    diesel_cost = 150  # diesel generator capital cost, USD/kW rated power
-    wind_life = 20  # wind panel expected lifetime, years
-    diesel_life = 10  # diesel generator expected lifetime, years
+    lpsp_max = 0.05  # maximum loss of load allowed over the year, in share of kWh
     wind_om = 0.015  # annual OM cost of wind panels
     diesel_om = 0.1  # annual OM cost of diesel generator
     k_t = 0.005  # temperature factor of wind panels
-    inverter_cost = 80 + 142
     inverter_life = 10
     inverter_efficiency = 0.92
-    charge_controller = 142
 
     wind_curve = wind_curve * wind_speed / np.average(wind_curve)
 

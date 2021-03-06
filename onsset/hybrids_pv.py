@@ -25,29 +25,27 @@ def pv_diesel_hybrid(
         tier,
         start_year,
         end_year,
-        pv_cost=534,
-        diesel_cost=150,
-        pv_no=15,  # number of PV panel sizes simulated
-        diesel_no=15,  # number of diesel generators simulated
-        discount_rate=0.10,
+        discount_rate,
+        battery_cost,  # =139 battery capital capital cost, USD/kWh of storage capacity
+        pv_cost,  # =534,  # PV panel capital cost, USD/kW peak power
+        diesel_cost,  # 150, # diesel generator capital cost, USD/kW rated power
+        inverter_cost, # 80 + 142
+        charge_controller_cost,  # 142
+        pv_life,  # 25
+        diesel_life,  # 10
+        pv_no=10,  # number of PV panel sizes simulated
+        diesel_no=10,  # number of diesel generators simulated
         diesel_range=[0.7]
-        # pv_cost = (220 + 283)
+
 ):
     n_chg = 0.92  # charge efficiency of battery
     n_dis = 0.92  # discharge efficiency of battery
-    lpsp_max = 0.10  # maximum loss of load allowed over the year, in share of kWh
-    battery_cost = 139  # 164  # battery capital capital cost, USD/kWh of storage capacity
-    # 796 * pv_adjustment_factor  # PV panel capital cost, USD/kW peak power
-    # diesel_cost = 261  # diesel generator capital cost, USD/kW rated power
-    pv_life = 25  # PV panel expected lifetime, years
-    diesel_life = 10  # diesel generator expected lifetime, years
+    lpsp_max = 0.05  # maximum loss of load allowed over the year, in share of kWh
     pv_om = 0.015  # annual OM cost of PV panels
     diesel_om = 0.1  # annual OM cost of diesel generator
     k_t = 0.005  # temperature factor of PV panels
-    inverter_cost = 80 + 142 # 567
     inverter_life = 10
     inv_eff = 0.92  # inverter_efficiency
-    charge_controller = 142  # 196
 
     ghi = ghi_curve * ghi * 1000 / ghi_curve.sum()
     hour_numbers = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) * 365
@@ -266,17 +264,17 @@ def pv_diesel_hybrid(
             salvage = np.zeros((len(battery_sizes), pv_no, diesel_no))
 
             fuel_costs = fuel_usage * diesel_price
-            om_costs = (pv_panel_size * (pv_cost + charge_controller) * pv_om + diesel_capacity * diesel_cost * diesel_om)
+            om_costs = (pv_panel_size * (pv_cost + charge_controller_cost) * pv_om + diesel_capacity * diesel_cost * diesel_om)
 
             inverter_investment = np.where(year % inverter_life == 0, max(load_curve) * inverter_cost, 0)
             diesel_investment = np.where(year % diesel_life == 0, diesel_capacity * diesel_cost, 0)
-            pv_investment = np.where(year % pv_life == 0, pv_panel_size * (pv_cost + charge_controller), 0)
+            pv_investment = np.where(year % pv_life == 0, pv_panel_size * (pv_cost + charge_controller_cost), 0)
             battery_investment = np.where(year % battery_life == 0, battery_size * battery_cost / dod_max, 0)  # TODO Include dod_max here?
 
             if year == project_life:
                 salvage = (1 - (project_life % battery_life) / battery_life) * battery_cost * battery_size / dod_max + \
                           (1 - (project_life % diesel_life) / diesel_life) * diesel_capacity * diesel_cost + \
-                          (1 - (project_life % pv_life) / pv_life) * pv_panel_size * (pv_cost + charge_controller) + \
+                          (1 - (project_life % pv_life) / pv_life) * pv_panel_size * (pv_cost + charge_controller_cost) + \
                           (1 - (project_life % inverter_life) / inverter_life) * max(load_curve) * inverter_cost
 
             investment += diesel_investment + pv_investment + battery_investment + inverter_investment - salvage
