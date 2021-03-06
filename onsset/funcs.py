@@ -72,7 +72,7 @@ def tech_specifications(discount_rate, grid_generation_cost, grid_power_plants_c
 
     return mg_hydro_calc, sa_pv_calc, mg_pv_hybrid_calc, mg_wind_hybrid_calc
 
-def summary_table(self, yearsofanalysis):
+def summary_table(self, yearsofanalysis, option, intensification_dist):
     elements = []
     for year in yearsofanalysis:
         elements.append("Population{}".format(year))
@@ -80,7 +80,12 @@ def summary_table(self, yearsofanalysis):
         elements.append("Capacity{}".format(year))
         elements.append("Investment{}".format(year))
 
-    techs = ["Grid", "SA_PV", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
+    if (option == 1) & (intensification_dist > 0):
+        techs = ["Expanded_MG", "SA_PV", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
+        codes = [2, 3, 8, 9, 7]
+    else:
+        techs = ["Grid", "SA_PV", "MG_PV_Hybrid", "MG_Wind_Hybrid", "MG_Hydro"]
+        codes = [1, 3, 8, 9, 7]
 
     sumtechs = []
     for year in yearsofanalysis:
@@ -92,16 +97,16 @@ def summary_table(self, yearsofanalysis):
     summary = pd.Series(index=sumtechs, name='country')
 
     for year in yearsofanalysis:
-        codes = [1, 3, 8, 9, 7]
+
         code_index = 0
         for t in techs:
             code = codes[code_index]
             code_index += 1
 
-            summary.loc["Population{}".format(year) + t] = self.loc[(self[SET_MIN_OVERALL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_POP + '{}'.format(year)].sum()
-            summary.loc["NewConnections{}".format(year) + t] = self.loc[(self[SET_MIN_OVERALL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CONNECTIONS + '{}'.format(year)].sum()
-            summary.loc["Capacity{}".format(year) + t] = self.loc[(self[SET_MIN_OVERALL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CAPACITY + '{}'.format(year)].sum() / 1000
-            summary.loc["Investment{}".format(year) + t] = self.loc[(self[SET_MIN_OVERALL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_INVESTMENT_COST + '{}'.format(year)].sum()
+            summary.loc["Population{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_POP + '{}'.format(year)].sum()
+            summary.loc["NewConnections{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CONNECTIONS + '{}'.format(year)].sum()
+            summary.loc["Capacity{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_NEW_CAPACITY + '{}'.format(year)].sum() / 1000
+            summary.loc["Investment{}".format(year) + t] = self.loc[(self[SET_ELEC_FINAL_CODE + '{}'.format(year)] == code) & (self[SET_ELEC_FINAL_CODE + '{}'.format(year)] < 99), SET_INVESTMENT_COST + '{}'.format(year)].sum()
             code += 1
 
     index = techs + ['Total']
@@ -111,6 +116,10 @@ def summary_table(self, yearsofanalysis):
         columns.append("NewConnections{}".format(year))
         columns.append("Capacity{} (MW)".format(year))
         columns.append("Investment{} (million USD)".format(year))
+
+    columns.append("NewConnectionsTotal")
+    columns.append("CapacityTotal (MW)")
+    columns.append("InvestmentTotal (million USD)")
 
     summary_table = pd.DataFrame(index=index, columns=columns)
 
@@ -122,6 +131,9 @@ def summary_table(self, yearsofanalysis):
     summary_table[columns[5]] = summary.iloc[25:30].astype(int).tolist() + [int(summary.iloc[25:30].sum())]
     summary_table[columns[6]] = summary.iloc[30:35].astype(int).tolist() + [int(summary.iloc[30:35].sum())]
     summary_table[columns[7]] = [round(x / 1e4) / 1e2 for x in summary.iloc[35:40].astype(float).tolist()] + [round(summary.iloc[35:40].sum() / 1e4) / 1e2]
+    summary_table[columns[8]] = summary_table[columns[1]] + summary_table[columns[5]]
+    summary_table[columns[9]] = summary_table[columns[2]] + summary_table[columns[6]]
+    summary_table[columns[10]] = summary_table[columns[3]] + summary_table[columns[7]]
 
     return summary_table
 
@@ -137,6 +149,10 @@ def summary_plots(summary_table, yearsofanalysis):
         columns.append("Capacity{} (MW)".format(year))
         columns.append("Investment{} (million USD)".format(year))
 
+    columns.append("NewConnectionsTotal")
+    columns.append("CapacityTotal (MW)")
+    columns.append("InvestmentTotal (million USD)")
+
     summary_plot = summary_table.drop(labels='Total', axis=0)
     fig_size = [15, 15]
     font_size = 8
@@ -149,13 +165,13 @@ def summary_plots(summary_table, yearsofanalysis):
     sns.barplot(x=summary_plot.index.tolist(), y=columns[4] + columns[0], data=summary_plot, ax=axarr[0, 0], palette=colors)
     axarr[0, 0].set_ylabel(columns[4], fontsize=2 * font_size)
     axarr[0, 0].tick_params(labelsize=font_size)
-    sns.barplot(x=summary_plot.index.tolist(), y=columns[5], data=summary_plot, ax=axarr[0, 1], palette=colors)
+    sns.barplot(x=summary_plot.index.tolist(), y=columns[8], data=summary_plot, ax=axarr[0, 1], palette=colors)
     axarr[0, 1].set_ylabel(columns[5], fontsize=2 * font_size)
     axarr[0, 1].tick_params(labelsize=font_size)
-    sns.barplot(x=summary_plot.index.tolist(), y=columns[6], data=summary_plot, ax=axarr[1, 0], palette=colors)
+    sns.barplot(x=summary_plot.index.tolist(), y=columns[9], data=summary_plot, ax=axarr[1, 0], palette=colors)
     axarr[1, 0].set_ylabel(columns[6], fontsize=2 * font_size)
     axarr[1, 0].tick_params(labelsize=font_size)
-    sns.barplot(x=summary_plot.index.tolist(), y=columns[7], data=summary_plot, ax=axarr[1, 1], palette=colors)
+    sns.barplot(x=summary_plot.index.tolist(), y=columns[10], data=summary_plot, ax=axarr[1, 1], palette=colors)
     axarr[1, 1].set_ylabel(columns[7], fontsize=2 * font_size)
     axarr[1, 1].tick_params(labelsize=font_size)
 
