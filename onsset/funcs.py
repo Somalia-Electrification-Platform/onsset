@@ -162,7 +162,7 @@ def summary_plots(summary_table, yearsofanalysis):
     font_size = 8
     plt.rcParams["figure.figsize"] = fig_size
 
-    sns.barplot(x=summary_plot.index.tolist(), y=columns[4] + columns[0], data=summary_plot, ax=axarr[0, 0], palette=colors)
+    sns.barplot(x=summary_plot.index.tolist(), y=columns[4], data=summary_plot, ax=axarr[0, 0], palette=colors)
     axarr[0, 0].set_ylabel(columns[4], fontsize=2 * font_size)
     axarr[0, 0].tick_params(labelsize=font_size)
     sns.barplot(x=summary_plot.index.tolist(), y=columns[8], data=summary_plot, ax=axarr[0, 1], palette=colors)
