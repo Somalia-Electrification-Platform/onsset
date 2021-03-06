@@ -1719,7 +1719,7 @@ class SettlementProcessor:
             self.df.loc[self.df[SET_URBAN] == 2, SET_CAPITA_DEMAND] *= (1 + urban_commercial_demand_factor)
             self.df.loc[self.df[SET_URBAN] < 2, SET_CAPITA_DEMAND] *= (1 + rural_commercial_demand_factor)
 
-    def calculate_total_demand_per_settlement(self, year, productive_demand, time_step):
+    def calculate_total_demand_per_settlement(self, year, productive_demand, time_step, start_year):
         """this method calculates total demand for each settlement per year
 
         Arguments
@@ -1766,7 +1766,7 @@ class SettlementProcessor:
         if int(productive_demand) == 1:
             self.df[SET_TOTAL_ENERGY_PER_CELL] += self.df[SET_EDU_DEMAND]
 
-        if year == 2025:
+        if year - time_step == start_year:
             # Add commercial demand
             if int(productive_demand) == 1:
                 self.df[SET_ENERGY_PER_CELL + "{}".format(year)] += self.df[SET_AGRI_DEMAND]
@@ -1782,7 +1782,7 @@ class SettlementProcessor:
             # Add education demand
             if int(productive_demand) == 1:
                 self.df[SET_ENERGY_PER_CELL + "{}".format(year)] += self.df[SET_EDU_DEMAND]
-        elif year == 2030:
+        else:
             if int(productive_demand) == 1:
                 self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(
                     year - time_step)] == 99, SET_ENERGY_PER_CELL + "{}".format(year)] += self.df[SET_AGRI_DEMAND]
@@ -1819,7 +1819,7 @@ class SettlementProcessor:
         self.set_residential_demand(rural_demand_low, rural_demand_high, urban_demand_low, urban_demand_high,
                                     num_people_per_hh_rural, num_people_per_hh_urban, urban_commercial_demand_factor,
                                     rural_commercial_demand_factor)
-        self.calculate_total_demand_per_settlement(year, 1, time_step)
+        self.calculate_total_demand_per_settlement(year, 1, time_step, start_year)
 
         # TODO: REVIEW, added Tier column
         tier_1 = 38.7  # 38.7 refers to kWh/household/year. It is the mean value between Tier 1 and Tier 2
