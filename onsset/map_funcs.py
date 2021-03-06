@@ -54,10 +54,10 @@ def least_cost_map(self, intermediate_year, end_year, pop_threshold, result_year
 
     # Very light gray for unelectrified settlements, the rest get same colors as platform
     for index, row in results_df.iterrows():
-        if row["FinalElecCode{}".format(end_year)] == 99:
+        if row["FinalElecCode{}".format(result_year)] == 99:
             tech_color = 'lightgray'
         else:
-            tech_color = colors[int((row["FinalElecCode{}".format(end_year)])) - 1]
+            tech_color = colors[int((row["FinalElecCode{}".format(result_year)])) - 1]
 
         technologies_available = {1: 'Grid',
                                   2: 'Expanded mini-grid',
@@ -65,7 +65,8 @@ def least_cost_map(self, intermediate_year, end_year, pop_threshold, result_year
                                   8: 'Hybrid mini-grid PV',
                                   9: 'Hybrid mini-grid wind',
                                   7: 'Mini-grid hydro',
-                                  3: 'Stand-alone PV'}
+                                  3: 'Stand-alone PV',
+                                  99: 'Unelectrified'}
 
         # Data to show in popup, numbers have to transformed to strings first
         LineOne = "Technology choice: " + str(technologies_available.get(row["FinalElecCode{}".format(result_year)]))

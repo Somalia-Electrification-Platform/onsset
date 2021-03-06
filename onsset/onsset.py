@@ -1020,8 +1020,6 @@ class SettlementProcessor:
         self.df.loc[self.df[SET_URBAN] == 1, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_rural
         self.df.loc[self.df[SET_URBAN] == 2, SET_NUM_PEOPLE_PER_HH] = num_people_per_hh_urban
 
-
-
         return pop_modelled, urban_modelled
 
     def project_pop_and_urban(self, urban_pop_growth, rural_pop_growth,  start_year, end_year, intermediate_year):
