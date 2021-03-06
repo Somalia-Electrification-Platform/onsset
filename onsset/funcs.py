@@ -92,7 +92,7 @@ def summary_table(self, yearsofanalysis):
     summary = pd.Series(index=sumtechs, name='country')
 
     for year in yearsofanalysis:
-        codes = [1, 3, 4, 8, 9, 7]
+        codes = [1, 3, 8, 9, 7]
         code_index = 0
         for t in techs:
             code = codes[code_index]
