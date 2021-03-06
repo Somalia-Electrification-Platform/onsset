@@ -2502,6 +2502,16 @@ class SettlementProcessor:
                                                            self.df['NumPeoplePerHH']) + (
                                                                       self.df['NewConnections' + '{}'.format(end_year)] /
                                                                       self.df['NumPeoplePerHH']))
+
+        if (option == 1) & (intensification == 0):
+            self.df.loc[
+                self.df[SET_ELEC_FINAL_CODE + "{}".format(intermediate_year)] == 1, SET_MIN_OVERALL + "{}".format(
+                    intermediate_year)] = self.df[SET_MIN_OFFGRID + "{}".format(intermediate_year)]
+            self.df.loc[
+                self.df[SET_ELEC_FINAL_CODE + "{}".format(end_year)] == 1, SET_MIN_OVERALL + "{}".format(end_year)] = \
+            self.df[SET_MIN_OFFGRID + "{}".format(end_year)]
+
+
         # Change expanded mini-grid code
         if (option == 1) & (intensification > 0):
             self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(intermediate_year)] == 1, SET_MIN_OVERALL + "{}".format(intermediate_year)] = self.df[SET_MIN_OFFGRID + "{}".format(intermediate_year)]
@@ -2510,7 +2520,7 @@ class SettlementProcessor:
             self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(end_year)] == 1, SET_MIN_OVERALL + "{}".format(end_year)] = self.df[SET_MIN_OFFGRID + "{}".format(end_year)]
             self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(end_year)] == 1, SET_ELEC_FINAL_CODE + "{}".format(end_year)] = 2
 
-            self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(start_year)] == 1, SET_MIN_OVERALL + "{}".format(start_year)] = self.df[SET_MIN_OFFGRID + "{}".format(start_year)]
+            # self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(start_year)] == 1, SET_MIN_OVERALL + "{}".format(start_year)] = self.df[SET_MIN_OFFGRID + "{}".format(start_year)]
             self.df.loc[self.df[SET_ELEC_FINAL_CODE + "{}".format(start_year)] == 1, SET_ELEC_FINAL_CODE + "{}".format(start_year)] = 2
 
         if option == 2:
