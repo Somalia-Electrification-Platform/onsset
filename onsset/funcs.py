@@ -72,7 +72,7 @@ def tech_specifications(discount_rate, grid_generation_cost, grid_power_plants_c
 
     return mg_hydro_calc, sa_pv_calc, mg_pv_hybrid_calc, mg_wind_hybrid_calc
 
-def summary_table(self, yearsofanalysis, option, intensification_dist):
+def summary_table_calc(self, yearsofanalysis, option, intensification_dist):
     elements = []
     for year in yearsofanalysis:
         elements.append("Population{}".format(year))
