@@ -1,7 +1,7 @@
 onsset : Open Source Spatial Electrification Tool
 =================================================
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Somalia-Electrification-Platform/onsset/online-version)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Somalia-Electrification-Platform/onsset/online-binder-version)
 [![PyPI version](https://badge.fury.io/py/onsset.svg)](https://badge.fury.io/py/onsset)
 [![Build Status](https://travis-ci.com/OnSSET/onsset.svg?branch=master)](https://travis-ci.com/OnSSET/onsset)
 [![Coverage Status](https://coveralls.io/repos/github/OnSSET/onsset/badge.svg?branch=master)](https://coveralls.io/github/OnSSET/onsset?branch=master)
