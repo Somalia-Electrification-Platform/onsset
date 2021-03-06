@@ -139,11 +139,11 @@ def summary_plots(summary_table, yearsofanalysis):
 
     summary_plot = summary_table.drop(labels='Total', axis=0)
     fig_size = [15, 15]
-    font_size = 10
+    font_size = 8
     plt.rcParams["figure.figsize"] = fig_size
     f, axarr = plt.subplots(2, 2)
     fig_size = [15, 15]
-    font_size = 10
+    font_size = 8
     plt.rcParams["figure.figsize"] = fig_size
 
     sns.barplot(x=summary_plot.index.tolist(), y=columns[4], data=summary_plot, ax=axarr[0, 0], palette=colors)
